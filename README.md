@@ -1,4 +1,4 @@
-# OpenHands Multi-Agent Coding Team
+# Poietes Multi-Agent Coding Team
 
 A modular, hierarchical AI agent system for autonomous software development,
 monitoring, security auditing, and content generation — built on OpenHands SDK.
