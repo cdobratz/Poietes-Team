@@ -1,0 +1,134 @@
+# docker/docker-compose.yml
+# Full production stack: agent server + MCP services + Telegram polling
+
+version: "3.9"
+
+networks:
+  agents:
+    driver: bridge
+
+volumes:
+  workspace:
+  mem0_data:
+
+# ─── Shared environment ───────────────────────────────────────────────────────
+x-common-env: &common-env
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  XAI_API_KEY: ${XAI_API_KEY:-}
+  GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+  GITLAB_TOKEN: ${GITLAB_TOKEN:-}
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+  MEM0_API_KEY: ${MEM0_API_KEY:-}
+
+services:
+
+  # ── Main agent runner ───────────────────────────────────────────────────
+  agent-runner:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: oh-agent-runner
+    environment:
+      <<: *common-env
+    volumes:
+      - workspace:/workspace
+      - ../config:/app/config:ro
+      - /var/run/docker.sock:/var/run/docker.sock  # for DockerWorkspace
+    networks:
+      - agents
+    depends_on:
+      mem0:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["python", "main.py", "run", "--task", "scan all projects"]
+
+  # ── Telegram bot (optional) ─────────────────────────────────────────────
+  telegram-bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: oh-telegram-bot
+    environment:
+      <<: *common-env
+    volumes:
+      - ../config:/app/config:ro
+    networks:
+      - agents
+    depends_on:
+      - agent-runner
+    restart: unless-stopped
+    command: ["python", "main.py", "bot"]
+    profiles:
+      - telegram   # enable with: docker-compose --profile telegram up
+
+  # ── Mem0 self-hosted MCP ────────────────────────────────────────────────
+  mem0:
+    image: mem0ai/mem0:latest
+    container_name: oh-mem0
+    environment:
+      MEM0_API_KEY: ${MEM0_API_KEY:-localdev}
+      DATABASE_URL: sqlite:////data/mem0.db
+    volumes:
+      - mem0_data:/data
+    networks:
+      - agents
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Serena MCP ─────────────────────────────────────────────────────────
+  serena:
+    image: serena-ai/serena-mcp:latest   # replace with actual image
+    container_name: oh-serena
+    environment:
+      SERENA_WORKSPACE: /workspace
+    volumes:
+      - workspace:/workspace
+    networks:
+      - agents
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    profiles:
+      - serena
+
+  # ── Playwright MCP ─────────────────────────────────────────────────────
+  playwright-mcp:
+    image: mcr.microsoft.com/playwright:v1.40.0-jammy
+    container_name: oh-playwright
+    command: ["node", "/app/mcp-server.js"]
+    networks:
+      - agents
+    ports:
+      - "8003:8003"
+    restart: unless-stopped
+    profiles:
+      - playwright
+
+  # ── Ollama (local LLMs) ─────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: oh-ollama
+    volumes:
+      - ~/.ollama:/root/.ollama
+    networks:
+      - agents
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    profiles:
+      - ollama
+    # Uncomment for GPU:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]

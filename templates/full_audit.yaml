@@ -1,0 +1,22 @@
+id: full_audit
+name: Full Project Audit
+description: "Run a complete audit on {{project}}: monitor, security scan, and documentation."
+variables:
+  - project
+
+steps:
+  - agent: monitor
+    task: "Scan {{project}} for code health issues, dead code, and drift"
+    description: "Code health and monitoring scan"
+
+  - agent: security
+    task: "Run full security audit on {{project}} including dependency checks"
+    description: "Security vulnerability scan"
+    depends_on:
+      - monitor
+
+  - agent: content
+    task: "Generate updated README and changelog for {{project}}"
+    description: "Documentation generation"
+    depends_on:
+      - security

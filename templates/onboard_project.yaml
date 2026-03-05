@@ -1,0 +1,22 @@
+id: onboard_project
+name: Onboard Project
+description: "Initial onboarding for {{project}}: scan, audit, and generate documentation."
+variables:
+  - project
+
+steps:
+  - agent: monitor
+    task: "Initial scan of {{project}}: file structure, language detection, dependency overview"
+    description: "Initial project scan"
+
+  - agent: security
+    task: "Baseline security audit for {{project}}"
+    description: "Baseline security audit"
+    depends_on:
+      - monitor
+
+  - agent: content
+    task: "Generate initial README, changelog, and API docs for {{project}}"
+    description: "Initial documentation generation"
+    depends_on:
+      - monitor

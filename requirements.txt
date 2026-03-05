@@ -1,0 +1,41 @@
+# Core
+openhands-ai>=0.1.0
+litellm>=1.40.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# Memory
+mem0ai>=0.1.0
+
+# Messaging
+python-telegram-bot>=21.0
+
+# Git
+PyGithub>=2.1.0
+python-gitlab>=4.0.0
+gitpython>=3.1.40
+
+# Security scanning
+bandit>=1.7.0
+semgrep>=1.50.0
+safety>=3.0.0
+
+# Browser / MCP
+playwright>=1.40.0
+mcp>=1.0.0
+
+# Utilities
+pyyaml>=6.0
+python-dotenv>=1.0.0
+rich>=13.0.0       # pretty CLI output
+typer>=0.9.0       # CLI interface
+httpx>=0.26.0
+aiofiles>=23.0.0
+tenacity>=8.2.0    # retries
+
+# Dev / Test
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-mock>=3.12.0
+black>=24.0.0
+ruff>=0.3.0

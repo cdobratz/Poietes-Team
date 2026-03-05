@@ -1,0 +1,29 @@
+id: implement_feature
+name: Implement Feature
+description: "Implement {{feature}} in {{project}} with monitoring, coding, security, and docs."
+variables:
+  - project
+  - feature
+
+steps:
+  - agent: monitor
+    task: "Scan {{project}} before implementing {{feature}}"
+    description: "Pre-implementation health check"
+
+  - agent: coder
+    task: "Implement {{feature}} in {{project}}"
+    description: "Feature implementation"
+    depends_on:
+      - monitor
+
+  - agent: security
+    task: "Security scan {{project}} after implementing {{feature}}"
+    description: "Post-implementation security check"
+    depends_on:
+      - coder
+
+  - agent: content
+    task: "Update docs for {{project}} to reflect new feature: {{feature}}"
+    description: "Documentation update"
+    depends_on:
+      - security

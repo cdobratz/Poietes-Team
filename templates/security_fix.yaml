@@ -1,0 +1,22 @@
+id: security_fix
+name: Security Fix
+description: "Find and fix security issues in {{project}}."
+variables:
+  - project
+
+steps:
+  - agent: security
+    task: "Run full security scan on {{project}} and identify all vulnerabilities"
+    description: "Initial security scan"
+
+  - agent: coder
+    task: "Fix all security vulnerabilities found in {{project}}"
+    description: "Apply security fixes"
+    depends_on:
+      - security
+
+  - agent: security
+    task: "Re-scan {{project}} to verify all security fixes were applied correctly"
+    description: "Verification scan"
+    depends_on:
+      - coder

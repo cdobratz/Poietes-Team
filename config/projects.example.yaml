@@ -1,0 +1,68 @@
+# config/projects.example.yaml
+# Add / remove projects here — no code changes needed.
+# Agents reload this file on each run.
+
+projects:
+
+  - id: api-backend
+    name: "REST API Backend"
+    path: "/workspace/api-backend"          # local path (or leave blank if git-only)
+    repo: "github.com/org/api-backend"
+    branch: main
+    language: python
+    enabled: true
+    tasks:
+      monitor: true
+      coder: true
+      security: true
+      content: true
+    labels:
+      - backend
+      - critical
+
+  - id: frontend-app
+    name: "React Frontend"
+    path: "/workspace/frontend-app"
+    repo: "github.com/org/frontend-app"
+    branch: main
+    language: typescript
+    enabled: true
+    tasks:
+      monitor: true
+      coder: true
+      security: true
+      content: true
+    labels:
+      - frontend
+
+  - id: data-pipeline
+    name: "ETL Data Pipeline"
+    path: "/workspace/data-pipeline"
+    repo: "gitlab.com/org/data-pipeline"
+    branch: develop
+    language: python
+    enabled: false                          # temporarily disabled
+    tasks:
+      monitor: true
+      coder: false
+      security: true
+      content: false
+    labels:
+      - data
+      - pipeline
+
+  - id: mobile-app
+    name: "Mobile App (React Native)"
+    path: "/workspace/mobile-app"
+    repo: "github.com/org/mobile-app"
+    branch: main
+    language: javascript
+    enabled: true
+    tasks:
+      monitor: true
+      coder: true
+      security: true
+      content: true
+    labels:
+      - mobile
+      - frontend

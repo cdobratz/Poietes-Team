@@ -1,0 +1,100 @@
+# config/settings.example.yaml
+# Copy to settings.yaml and fill in your values.
+
+# ─── LLM Backends ────────────────────────────────────────────────────────────
+llm:
+  default: claude                    # which backend to use by default
+
+  backends:
+    claude:
+      provider: anthropic
+      model: claude-sonnet-4-20250514
+      api_key: "${ANTHROPIC_API_KEY}" # reads from env var
+
+    grok:
+      provider: xai
+      model: grok-3
+      api_key: "${XAI_API_KEY}"
+
+    ollama:
+      provider: ollama
+      model: llama3.2                # or codellama, deepseek-coder, etc.
+      base_url: "http://localhost:11434"
+
+    minimax:
+      provider: minimax
+      model: abab6.5s-chat
+      api_key: "${MINIMAX_API_KEY}"
+
+# ─── Agent Assignments ───────────────────────────────────────────────────────
+agents:
+  supervisor:
+    llm: claude
+    max_iterations: 20
+
+  monitor:
+    llm: ollama          # cheap local model for scanning
+    max_iterations: 10
+
+  coder:
+    llm: claude          # best model for code generation
+    max_iterations: 30
+
+  security:
+    llm: grok
+    max_iterations: 15
+
+  content:
+    llm: claude
+    max_iterations: 15
+
+# ─── MCP Servers ─────────────────────────────────────────────────────────────
+mcp:
+  serena:
+    url: "http://localhost:8001/mcp"
+    enabled: true
+
+  mem0:
+    url: "http://localhost:8002/mcp"
+    enabled: true
+    api_key: "${MEM0_API_KEY}"      # leave blank for self-hosted
+
+  playwright:
+    url: "http://localhost:8003/mcp"
+    enabled: false                  # enable for web-based tasks
+
+# ─── Messaging ───────────────────────────────────────────────────────────────
+messaging:
+  telegram:
+    enabled: false
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+
+  cli:
+    enabled: true
+    verbose: true
+
+# ─── Git ─────────────────────────────────────────────────────────────────────
+git:
+  github:
+    enabled: true
+    token: "${GITHUB_TOKEN}"
+    default_branch: main
+    auto_pr: false                  # set true to auto-open PRs
+
+  gitlab:
+    enabled: false
+    token: "${GITLAB_TOKEN}"
+    url: "https://gitlab.com"
+
+# ─── Workspace ───────────────────────────────────────────────────────────────
+workspace:
+  type: local                       # local | docker
+  sandbox_writes: true              # require approval before file writes
+  approval_required: true
+
+# ─── Security ────────────────────────────────────────────────────────────────
+security:
+  bandit: true
+  semgrep: true
+  safety: true                      # dependency vulnerability check

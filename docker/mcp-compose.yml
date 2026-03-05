@@ -1,0 +1,80 @@
+# docker/mcp-compose.yml
+# Standalone MCP services for local development.
+# Usage: docker-compose -f docker/mcp-compose.yml up -d
+
+version: "3.9"
+
+networks:
+  mcp:
+    driver: bridge
+
+volumes:
+  mem0_data:
+  workspace:
+
+services:
+
+  # ── Mem0 self-hosted MCP ────────────────────────────────────────────────
+  mem0:
+    image: mem0ai/mem0:latest
+    container_name: oh-mem0
+    environment:
+      MEM0_API_KEY: ${MEM0_API_KEY:-localdev}
+      DATABASE_URL: sqlite:////data/mem0.db
+    volumes:
+      - mem0_data:/data
+    networks:
+      - mcp
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Serena MCP ─────────────────────────────────────────────────────────
+  serena:
+    image: serena-ai/serena-mcp:latest
+    container_name: oh-serena
+    environment:
+      SERENA_WORKSPACE: /workspace
+    volumes:
+      - workspace:/workspace
+    networks:
+      - mcp
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
+  # ── Playwright MCP ─────────────────────────────────────────────────────
+  playwright-mcp:
+    image: mcr.microsoft.com/playwright:v1.40.0-jammy
+    container_name: oh-playwright
+    command: ["node", "/app/mcp-server.js"]
+    networks:
+      - mcp
+    ports:
+      - "8003:8003"
+    restart: unless-stopped
+
+  # ── Ollama (local LLMs) ────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: oh-ollama
+    volumes:
+      - ~/.ollama:/root/.ollama
+    networks:
+      - mcp
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    # Uncomment for GPU:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
