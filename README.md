@@ -620,7 +620,7 @@ Include:
 - **Docs:** See README.md and doc/
 - **Issues:** GitHub Issues
 - **Discussions:** GitHub Discussions
-- **Email:** support@poietes.dev
+- **Email:** info@poietes.org
 
 ---
 
