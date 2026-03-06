@@ -15,6 +15,7 @@ from agents.monitor_agent import MonitorAgent
 from agents.coder_agent import CoderAgent
 from agents.security_agent import SecurityAgent
 from agents.content_agent import ContentAgent
+from agents.filesystem_agent import FilesystemAgent
 from config.loader import Project, ProjectRegistry, Settings
 from templates.loader import TaskTemplate
 
@@ -31,7 +32,7 @@ Respond ONLY as JSON:
   "plan": [
     {
       "project_id": "...",
-      "agents": ["monitor", "security", "coder", "content"],
+      "agents": ["monitor", "security", "coder", "content", "filesystem"],
       "task": "...",
       "priority": 1
     }
@@ -45,6 +46,7 @@ Agent roles:
 - security: Bandit, Semgrep, dependency audits
 - coder: feature implementation, bug fixes, refactoring
 - content: README, changelog, docstrings
+- filesystem: directory scanning, file search, tree structure, large file detection
 """
 
 
@@ -73,6 +75,7 @@ class SupervisorAgent(BaseAgent):
             "coder": CoderAgent(settings, memory, messenger),
             "security": SecurityAgent(settings, memory, messenger),
             "content": ContentAgent(settings, memory, messenger),
+            "filesystem": FilesystemAgent(settings, memory, messenger),
         }
 
     # ── Planning ──────────────────────────────────────────────────────────

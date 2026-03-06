@@ -31,6 +31,7 @@ from config.loader import load_settings, load_projects
 from memory.mem0_client import build_memory_client
 from messaging.messenger import build_messenger
 from agents.supervisor_agent import SupervisorAgent
+from agents.filesystem_agent import FilesystemAgent
 from templates.loader import list_templates, load_template
 from tools.git_tools import GitManager
 
@@ -198,6 +199,195 @@ def list_templates_cmd():
         )
 
     console.print(table)
+
+
+# ─── Filesystem Commands ───────────────────────────────────────────────────────
+
+fs_app = typer.Typer(help="Filesystem operations (scan, search, tree, large files).")
+
+
+@fs_app.command("scan")
+def fs_scan(
+    path: str = typer.Argument(..., help="Directory path to scan"),
+    pattern: str = typer.Option(None, "--pattern", "-p", help="Glob pattern (e.g., *.py)"),
+):
+    """Scan a directory recursively."""
+    settings = load_settings()
+    fs_agent = FilesystemAgent(settings)
+    
+    console.print(f"[cyan]Scanning:[/cyan] {path}")
+    result = fs_agent.scan_directory(path, pattern)
+    
+    console.print(f"[green]✅[/green] {result.total_files} files, {result.total_dirs} directories")
+    console.print(f"[green]📊[/green] Total size: {result.total_size / 1024:.1f} KB")
+    
+    if result.files:
+        console.print("\n[bold]Files:[/bold]")
+        for f in result.files[:20]:
+            icon = "📁" if f.is_dir else "📄"
+            console.print(f"  {icon} {f.path}")
+        if len(result.files) > 20:
+            console.print(f"  ... and {len(result.files) - 20} more")
+
+
+@fs_app.command("search")
+def fs_search(
+    path: str = typer.Argument(..., help="Directory to search"),
+    query: str = typer.Argument(..., help="Search pattern (regex)"),
+    file_pattern: str = typer.Option(None, "--pattern", "-p", help="File pattern (e.g., *.py)"),
+):
+    """Search for text in files."""
+    settings = load_settings()
+    fs_agent = FilesystemAgent(settings)
+    
+    console.print(f"[cyan]Searching:[/cyan] {path} for '{query}'")
+    result = fs_agent.search_files(path, query, file_pattern)
+    
+    console.print(f"[green]✅[/green] {result.total_matches} matches in {result.files_matched} files")
+    
+    for match in result.matches[:10]:
+        console.print(f"\n[bold]📄 {match['file']}[/bold]")
+        for m in match["matches"][:5]:
+            console.print(f"  Line {m['line']}: {m['content'][:80]}")
+
+
+@fs_app.command("tree")
+def fs_tree(
+    path: str = typer.Argument(..., help="Directory path"),
+    depth: int = typer.Option(3, "--depth", "-d", help="Maximum depth"),
+):
+    """Show directory tree structure."""
+    import json
+    settings = load_settings()
+    fs_agent = FilesystemAgent(settings)
+    
+    console.print(f"[cyan]Tree:[/cyan] {path}")
+    tree = fs_agent.list_tree(path, depth)
+    
+    console.print(json.dumps(tree, indent=2))
+
+
+@fs_app.command("large")
+def fs_large(
+    path: str = typer.Argument(..., help="Directory path"),
+    min_lines: int = typer.Option(500, "--min-lines", "-n", help="Minimum line count"),
+):
+    """Find large files."""
+    settings = load_settings()
+    fs_agent = FilesystemAgent(settings)
+    
+    console.print(f"[cyan]Finding large files in:[/cyan] {path}")
+    large_files = fs_agent.find_large_files(path, min_lines=min_lines)
+    
+    console.print(f"[green]✅[/green] Found {len(large_files)} large files")
+    
+    for f in large_files[:20]:
+        console.print(f"  📄 {f.path} ({f.line_count} lines, {f.size / 1024:.1f} KB)")
+
+
+@fs_app.command("info")
+def fs_info(
+    path: str = typer.Argument(..., help="File or directory path"),
+):
+    """Get file/directory info."""
+    settings = load_settings()
+    fs_agent = FilesystemAgent(settings)
+    
+    info = fs_agent.get_file_info(path)
+    
+    if info:
+        console.print(f"[bold]Path:[/bold] {info.path}")
+        console.print(f"[bold]Type:[/bold] {'Directory' if info.is_dir else 'File'}")
+        console.print(f"[bold]Size:[/bold] {info.size / 1024:.1f} KB")
+        console.print(f"[bold]Modified:[/bold] {info.modified}")
+        if info.extension:
+            console.print(f"[bold]Extension:[/bold] {info.extension}")
+        if info.line_count:
+            console.print(f"[bold]Lines:[/bold] {info.line_count}")
+    else:
+        console.print(f"[red]Could not get info for: {path}[/red]")
+
+
+app.add_typer(fs_app, name="fs")
+
+
+# ─── Skills Commands ────────────────────────────────────────────────────────────
+
+skills_app = typer.Typer(help="Skill management commands.")
+
+
+@skills_app.command("list")
+def skills_list():
+    """List all available skills."""
+    from pathlib import Path
+    from skills.base import SkillRegistry, init_skill_registry
+    
+    # Initialize registry with skills directory
+    skills_dir = Path(__file__).parent / "skills"
+    registry = init_skill_registry(str(skills_dir))
+    
+    skills = registry.list_all()
+    
+    if not skills:
+        console.print("[yellow]No skills found.[/yellow]")
+        raise typer.Exit(0)
+    
+    table = Table(title="Available Skills", show_header=True, header_style="bold cyan")
+    table.add_column("Name", style="dim")
+    table.add_column("Description")
+    table.add_column("Triggers")
+    
+    for skill in skills:
+        table.add_row(
+            skill.name,
+            skill.description[:50] + ("..." if len(skill.description) > 50 else ""),
+            ", ".join(skill.triggers[:5]),
+        )
+    
+    console.print(table)
+
+
+app.add_typer(skills_app, name="skills")
+
+
+# ─── Memory Commands ────────────────────────────────────────────────────────────
+
+memory_app = typer.Typer(help="Memory management commands.")
+
+
+@memory_app.command("stats")
+def memory_stats(project_id: str = typer.Option("", "--project", "-p", help="Project ID")):
+    """Show memory statistics."""
+    from memory.smart_memory import create_smart_memory
+    
+    sm = create_smart_memory()
+    stats = sm.get_stats(project_id=project_id if project_id else "")
+    
+    console.print("[bold]Memory Statistics[/bold]")
+    console.print(f"Total memories: {stats['total']}")
+    console.print(f"  - Important: {stats['important']}")
+    console.print(f"  - Context: {stats['context']}")
+    console.print(f"Average score: {stats['average_score']}")
+    console.print(f"High importance: {stats['high_importance']}")
+    console.print(f"Medium importance: {stats['medium_importance']}")
+    console.print(f"Low importance: {stats['low_importance']}")
+    console.print(f"Max per project: {stats['max_per_project']}")
+
+
+@memory_app.command("cleanup")
+def memory_cleanup():
+    """Clean up low-value memories."""
+    from memory.smart_memory import create_smart_memory
+    
+    sm = create_smart_memory()
+    cleaned = sm.cleanup_low_value()
+    summarized = sm.summarize_old_memories()
+    
+    console.print(f"[green]Cleaned up {cleaned} low-value memories[/green]")
+    console.print(f"[green]Summarized {summarized} old memories[/green]")
+
+
+app.add_typer(memory_app, name="memory")
 
 
 @app.command("run-template")
