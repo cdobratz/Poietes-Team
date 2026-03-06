@@ -1,11 +1,13 @@
 # Poietes Multi-Agent Coding Team
 
+![The Team Working](images/final-pixel-art.png)
+
 A modular, hierarchical AI agent system for autonomous software development,
 monitoring, security auditing, and content generation — built on OpenHands SDK.
 
 ## Architecture
 
-```
+```bash
 SupervisorAgent
 ├── MonitorAgent      — scans projects for issues, dead code, drift
 ├── CoderAgent        — feature development via Serena MCP
