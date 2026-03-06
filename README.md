@@ -1,6 +1,6 @@
 # Poietes Multi-Agent Coding Team
 
-![The Poietes multi-agent team collaborating on code: a pixel art illustration showing four stylized AI agents working together in a digital workspace, conveying teamwork, automation, and development activity in a friendly, approachable tone](images/final-pixel-art.png)
+![The Poietes multi-agent team collaborating on code: a pixel art illustration showing four stylized AI agents working together in a digital workspace, conveying teamwork, automation, and development activity in a friendly, approachable tone](images/final-pixel-art.jpg)
 
 A modular, hierarchical AI agent system for autonomous software development,
 monitoring, security auditing, and content generation — built on OpenHands SDK.
