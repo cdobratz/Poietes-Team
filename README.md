@@ -70,7 +70,7 @@ SupervisorAgent (orchestrator)
 
 ## Key Features
 
-### 1. FilesystemAgent — Arbitrary Directory Scanning
+### 1. FilesystemAgent: Arbitrary Directory Scanning
 
 Scan and analyze any local directory without pre-configuration.
 
@@ -87,7 +87,7 @@ Scan and analyze any local directory without pre-configuration.
 - Locate configuration mismatches across environments
 - Generate project structure reports
 
-### 2. Skill System — Extensible Agent Capabilities
+### 2. Skill System: Extensible Agent Capabilities
 
 Define and register reusable skills that agents can discover and execute dynamically.
 
@@ -122,9 +122,9 @@ class GitHubSkill(Skill):
 3. Implement the `action()` method
 4. Agents automatically discover and use it
 
-No code changes needed — skills are loaded dynamically on agent initialization.
+No code changes needed, skills are loaded dynamically on agent initialization.
 
-### 3. Smart Memory Management — Noise-Free Persistence
+### 3. Smart Memory Management: Noise-Free Persistence
 
 Intelligent, importance-weighted memory prevents unbounded growth while preserving critical context.
 
@@ -133,7 +133,7 @@ Intelligent, importance-weighted memory prevents unbounded growth while preservi
 | Feature | Description |
 |---------|------------|
 | **Importance Scoring** | Memories scored 1-10 based on keywords and usage |
-| **Auto-Cleanup** | Low-value memories (score < 4) expire after 7 days |
+| **Auto Cleanup** | Low value memories (score < 4) expire after 7 days |
 | **Project Isolation** | Max 50 important memories per project with LRU eviction |
 | **Distinction** | "Remember" (persistent) vs "Context" (ephemeral) |
 | **Semantic Search** | Query memories by meaning, not just keywords |
@@ -302,7 +302,7 @@ projects:
     enable_security_scan: true
 ```
 
-Note: **FilesystemAgent doesn't require pre-configured projects** — it scans any path provided at runtime.
+Note: **FilesystemAgent doesn't require pre-configured projects** it scans any path provided at runtime.
 
 ## Usage
 
@@ -366,7 +366,7 @@ print(result)
 
 ## Features Guide
 
-### MonitorAgent — Continuous Monitoring
+### MonitorAgent: Continuous Monitoring
 
 Scans configured projects for:
 - Dead code and unused imports
@@ -378,7 +378,7 @@ Scans configured projects for:
 
 **Trigger keywords:** `monitor`, `scan`, `issues`, `drift`, `dead code`
 
-### CoderAgent — Intelligent Development
+### CoderAgent Intelligent Development
 
 Develops features through:
 - Natural language specifications
@@ -389,7 +389,7 @@ Develops features through:
 
 **Trigger keywords:** `develop`, `feature`, `fix`, `refactor`, `implement`
 
-### SecurityAgent — Vulnerability Detection
+### SecurityAgent Vulnerability Detection
 
 Audits with:
 - Bandit (Python security)
@@ -399,7 +399,7 @@ Audits with:
 
 **Trigger keywords:** `security`, `audit`, `vulnerabilities`, `scan`, `penetration`
 
-### ContentAgent — Documentation Generation
+### ContentAgent Documentation Generation
 
 Generates:
 - API documentation
@@ -410,7 +410,7 @@ Generates:
 
 **Trigger keywords:** `docs`, `readme`, `changelog`, `document`, `generate`
 
-### FilesystemAgent — Directory Analysis
+### FilesystemAgent Directory Analysis
 
 Capabilities:
 - Scan any directory without pre-configuration
@@ -610,10 +610,6 @@ Include:
 - Expected vs. actual behavior
 - Config (settings.yaml, projects.yaml)
 - Logs (if applicable)
-
-## License
-
-[Your License Here]
 
 ## Support
 
