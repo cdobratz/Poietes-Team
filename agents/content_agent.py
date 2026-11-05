@@ -11,6 +11,7 @@ from pathlib import Path
 
 from agents.base import BaseAgent, AgentResult
 from config.loader import Project, Settings
+from tools.safe_paths import UnsafePathError, safe_join
 
 logger = logging.getLogger(__name__)
 
@@ -214,8 +215,13 @@ class ContentAgent(BaseAgent):
         root = Path(project.path)
         for key, item in details.items():
             if isinstance(item, dict) and "content" in item and "filename" in item:
-                target = root / item["filename"]
                 try:
+                    target = safe_join(root, str(item["filename"]))
+                except UnsafePathError as e:
+                    logger.warning(f"Rejected unsafe filename {item['filename']!r}: {e}")
+                    continue
+                try:
+                    target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text(item["content"])
                     written.append(item["filename"])
                     logger.info(f"Wrote {target}")

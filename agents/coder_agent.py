@@ -13,6 +13,7 @@ import httpx
 
 from agents.base import BaseAgent, AgentResult
 from config.loader import Project, Settings
+from tools.safe_paths import UnsafePathError, safe_join
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,13 @@ class CoderAgent(BaseAgent):
             file_rel = op.get("file", "")
             desc = op.get("description", op.get("op", "edit"))
 
+            if project.path:
+                try:
+                    safe_join(project.path, file_rel)
+                except UnsafePathError as e:
+                    logger.warning(f"Rejected unsafe edit target {file_rel!r}: {e}")
+                    continue
+
             if self._serena and project.path:
                 result = self._serena.apply_edit(op, project.path)
                 if "error" not in result:
@@ -135,7 +143,7 @@ class CoderAgent(BaseAgent):
 
             # Fallback: direct Python file ops for create/replace
             if project.path and op.get("op") == "create":
-                target = Path(project.path) / file_rel
+                target = safe_join(project.path, file_rel)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(op.get("content", ""))
                 applied.append(f"create: {file_rel} — {desc}")
