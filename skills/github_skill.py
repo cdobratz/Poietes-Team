@@ -1,6 +1,7 @@
 """
 skills/github_skill.py — GitHub operations skill.
 
+STATUS: placeholder. Every action returns {"success": False, "not_implemented": True}.
 Triggers: "github", "pr", "pull request", "issue", "repo", "commit"
 """
 from __future__ import annotations
@@ -9,7 +10,7 @@ import os
 import logging
 from typing import Any
 
-from skills.base import Skill
+from skills.base import Skill, not_implemented
 
 logger = logging.getLogger(__name__)
 
@@ -34,19 +35,8 @@ def create_pr(branch: str, title: str, body: str = "", base: str = "main") -> di
     Returns:
         Result dict with success status and PR URL
     """
-    if not GITHUB_AVAILABLE:
-        return {"success": False, "error": "GitHub tools not available"}
-    
-    # This would use GitHub API in a real implementation
-    logger.info(f"Creating PR: {branch} -> {base}: {title}")
-    
-    return {
-        "success": True,
-        "pr_url": f"https://github.com/org/repo/pull/1",
-        "branch": branch,
-        "base": base,
-        "title": title,
-    }
+    logger.info("create_pr called, but it is not implemented")
+    return not_implemented("GitHub create_pr")
 
 
 def list_issues(repo: str, state: str = "open") -> dict[str, Any]:
@@ -60,16 +50,8 @@ def list_issues(repo: str, state: str = "open") -> dict[str, Any]:
     Returns:
         List of issues
     """
-    if not GITHUB_AVAILABLE:
-        return {"success": False, "error": "GitHub tools not available"}
-    
-    logger.info(f"Listing issues for {repo} (state: {state})")
-    
-    return {
-        "success": True,
-        "issues": [],
-        "repo": repo,
-    }
+    logger.info("list_issues called, but it is not implemented")
+    return not_implemented("GitHub list_issues")
 
 
 def create_issue(
@@ -90,22 +72,14 @@ def create_issue(
     Returns:
         Result with issue URL
     """
-    if not GITHUB_AVAILABLE:
-        return {"success": False, "error": "GitHub tools not available"}
-    
-    logger.info(f"Creating issue in {repo}: {title}")
-    
-    return {
-        "success": True,
-        "issue_url": f"https://github.com/{repo}/issues/1",
-        "title": title,
-    }
+    logger.info("create_issue called, but it is not implemented")
+    return not_implemented("GitHub create_issue")
 
 
 # Skill definition
 skill = Skill(
     name="github",
-    description="GitHub operations including PRs, issues, and repository management",
+    description="[STUB, not implemented] GitHub operations including PRs, issues, and repository management",
     triggers=[
         "github", "pr", "pull request", "issue", 
         "repo", "commit", "branch", "merge"

@@ -1,7 +1,15 @@
 # docker/docker-compose.yml
-# Full production stack: agent server + MCP services + Telegram polling
-
-version: "3.9"
+# Agent runner (one-shot) + optional Telegram bot + optional local Ollama.
+#
+# Safety notes:
+#  - No Docker socket is mounted; containers run as a non-root user.
+#  - Config is mounted read-only. Create config/settings.yaml first (see README).
+#  - Memory uses Mem0 cloud (MEM0_API_KEY) or the built-in in-memory fallback.
+#    There is no official self-hosted Mem0 MCP image, so none is bundled.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.yml run --rm agent-runner
+#   docker compose -f docker/docker-compose.yml --profile telegram up -d telegram-bot
 
 networks:
   agents:
@@ -9,11 +17,11 @@ networks:
 
 volumes:
   workspace:
-  mem0_data:
+  ollama_models:
 
 # ─── Shared environment ───────────────────────────────────────────────────────
 x-common-env: &common-env
-  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY}
   XAI_API_KEY: ${XAI_API_KEY:-}
   GITHUB_TOKEN: ${GITHUB_TOKEN:-}
   GITLAB_TOKEN: ${GITLAB_TOKEN:-}
@@ -23,24 +31,20 @@ x-common-env: &common-env
 
 services:
 
-  # ── Main agent runner ───────────────────────────────────────────────────
+  # ── Main agent runner (one-shot: runs once and exits) ───────────────────
   agent-runner:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: oh-agent-runner
+    container_name: poietes-agent-runner
     environment:
       <<: *common-env
     volumes:
       - workspace:/workspace
       - ../config:/app/config:ro
-      - /var/run/docker.sock:/var/run/docker.sock  # for DockerWorkspace
     networks:
       - agents
-    depends_on:
-      mem0:
-        condition: service_healthy
-    restart: unless-stopped
+    restart: "no"          # one-shot: never restart (each run spends LLM tokens)
     command: ["python", "main.py", "run", "--task", "scan all projects"]
 
   # ── Telegram bot (optional) ─────────────────────────────────────────────
@@ -48,79 +52,29 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: oh-telegram-bot
+    container_name: poietes-telegram-bot
     environment:
       <<: *common-env
     volumes:
+      - workspace:/workspace
       - ../config:/app/config:ro
     networks:
       - agents
-    depends_on:
-      - agent-runner
     restart: unless-stopped
     command: ["python", "main.py", "bot"]
     profiles:
-      - telegram   # enable with: docker-compose --profile telegram up
-
-  # ── Mem0 self-hosted MCP ────────────────────────────────────────────────
-  mem0:
-    image: mem0ai/mem0:latest
-    container_name: oh-mem0
-    environment:
-      MEM0_API_KEY: ${MEM0_API_KEY:-localdev}
-      DATABASE_URL: sqlite:////data/mem0.db
-    volumes:
-      - mem0_data:/data
-    networks:
-      - agents
-    ports:
-      - "8002:8002"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # ── Serena MCP ─────────────────────────────────────────────────────────
-  serena:
-    image: serena-ai/serena-mcp:latest   # replace with actual image
-    container_name: oh-serena
-    environment:
-      SERENA_WORKSPACE: /workspace
-    volumes:
-      - workspace:/workspace
-    networks:
-      - agents
-    ports:
-      - "8001:8001"
-    restart: unless-stopped
-    profiles:
-      - serena
-
-  # ── Playwright MCP ─────────────────────────────────────────────────────
-  playwright-mcp:
-    image: mcr.microsoft.com/playwright:v1.40.0-jammy
-    container_name: oh-playwright
-    command: ["node", "/app/mcp-server.js"]
-    networks:
-      - agents
-    ports:
-      - "8003:8003"
-    restart: unless-stopped
-    profiles:
-      - playwright
+      - telegram   # enable with: docker compose --profile telegram up
 
   # ── Ollama (local LLMs) ─────────────────────────────────────────────────
   ollama:
-    image: ollama/ollama:latest
-    container_name: oh-ollama
+    image: ollama/ollama:0.40.14
+    container_name: poietes-ollama
     volumes:
-      - ~/.ollama:/root/.ollama
+      - ollama_models:/root/.ollama
     networks:
       - agents
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"   # localhost only
     restart: unless-stopped
     profiles:
       - ollama
