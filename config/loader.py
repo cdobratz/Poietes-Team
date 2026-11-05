@@ -144,6 +144,9 @@ class GitConfig(_StrictModel):
 
 class WorkspaceConfig(_StrictModel):
     type: str = "local"
+    # Filesystem CLI and, when set, the outer bound for project paths.
+    # Empty means `fs` commands refuse to run; agent tasks then use the project path.
+    root: str = ""
     sandbox_writes: bool = True
     approval_required: bool = True
 

@@ -6,13 +6,14 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
 
 import httpx
 
 from agents.base import BaseAgent, AgentResult
 from config.loader import Project, Settings
+from mcp_servers.serena_mcp import LocalSerenaShim
+from tools.llm_json import parse_llm_json
 from tools.safe_paths import UnsafePathError, safe_join
 
 logger = logging.getLogger(__name__)
@@ -119,36 +120,59 @@ class CoderAgent(BaseAgent):
 
     # ── Edit application ──────────────────────────────────────────────────
 
-    def _apply_operations(self, operations: list[dict], project: Project) -> list[str]:
-        """Apply code operations, using Serena if available, else direct file I/O."""
+    def _editor(self) -> Any:
+        """Serena MCP when it is enabled, otherwise the local edit shim."""
+        if self._serena is not None:
+            return self._serena
+        return LocalSerenaShim()
+
+    def _apply_operations(
+        self, operations: list[dict], project: Project
+    ) -> tuple[list[str], list[str]]:
+        """Apply every operation through one editor.
+
+        Returns ``(applied, failures)``. An operation that is unsafe, unsupported,
+        or rejected by the editor is a failure. Nothing is reported as applied
+        unless the editor accepted it. There is no create-only fallback.
+        """
         applied: list[str] = []
+        failures: list[str] = []
+        editor = self._editor()
 
         for op in operations:
-            file_rel = op.get("file", "")
-            desc = op.get("description", op.get("op", "edit"))
+            if not isinstance(op, dict):
+                failures.append("invalid operation (expected an object)")
+                continue
+            op_name = str(op.get("op", ""))
+            file_rel = str(op.get("file", ""))
+            desc = op.get("description", op_name or "edit")
+            label = f"{op_name or 'edit'}: {file_rel} — {desc}"
 
-            if project.path:
-                try:
-                    safe_join(project.path, file_rel)
-                except UnsafePathError as e:
-                    logger.warning(f"Rejected unsafe edit target {file_rel!r}: {e}")
-                    continue
+            if not project.path:
+                failures.append(f"{label}: no project path configured")
+                continue
+            try:
+                safe_join(project.path, file_rel)
+            except UnsafePathError as e:
+                logger.warning(f"Rejected unsafe edit target {file_rel!r}: {e}")
+                failures.append(f"{label}: {e}")
+                continue
 
-            if self._serena and project.path:
-                result = self._serena.apply_edit(op, project.path)
-                if "error" not in result:
-                    applied.append(f"{op['op']}: {file_rel} — {desc}")
-                    logger.info(f"Serena applied: {op['op']} on {file_rel}")
-                    continue
+            if not hasattr(editor, "apply_edit"):
+                failures.append(f"{label}: editor does not support apply_edit")
+                continue
 
-            # Fallback: direct Python file ops for create/replace
-            if project.path and op.get("op") == "create":
-                target = safe_join(project.path, file_rel)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(op.get("content", ""))
-                applied.append(f"create: {file_rel} — {desc}")
+            result = editor.apply_edit(op, project.path)
+            if not isinstance(result, dict) or "error" in result or result.get("success") is False:
+                err = result.get("error") if isinstance(result, dict) else "edit failed"
+                logger.warning(f"Edit failed ({op_name} {file_rel}): {err}")
+                failures.append(f"{label}: {err}")
+                continue
 
-        return applied
+            applied.append(label)
+            logger.info(f"Applied {op_name} on {file_rel}")
+
+        return applied, failures
 
     # ── Main task ─────────────────────────────────────────────────────────
 
@@ -173,17 +197,15 @@ class CoderAgent(BaseAgent):
 
         raw = self._call_llm(messages, system=CODER_SYSTEM_PROMPT)
 
-        # Parse response
-        try:
-            clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            response = json.loads(clean)
-        except (json.JSONDecodeError, AttributeError):
-            response = {"plan": raw, "operations": []}
+        response = parse_llm_json(raw) or {"plan": raw, "operations": []}
 
         plan = response.get("plan", "")
         operations = response.get("operations", [])
+        if not isinstance(operations, list):
+            operations = []
 
-        # Check approval gate
+        # Check approval gate. Notifying and then skipping is not a successful edit.
+        failures: list[str] = []
         if self.settings.workspace.approval_required and operations:
             self.notify(
                 f"⚠️ Approval required — {len(operations)} edit(s) planned for {project.name}.\n"
@@ -192,14 +214,20 @@ class CoderAgent(BaseAgent):
             logger.warning("Approval required but running non-interactively — skipping writes")
             applied: list[str] = []
             skipped = True
+            success = False
+            status = "awaiting_approval"
         else:
-            applied = self._apply_operations(operations, project)
+            applied, failures = self._apply_operations(operations, project)
             skipped = False
+            success = not (operations and len(applied) != len(operations))
+            status = "ok" if success else "failed"
 
         summary = (
-            f"{'(Dry-run) ' if skipped else ''}{len(applied)}/{len(operations)} "
-            f"operation(s) applied."
+            f"{'Awaiting approval. ' if skipped else ''}"
+            f"{len(applied)}/{len(operations)} operation(s) applied."
         )
+        if failures:
+            summary += f" {len(failures)} failed."
 
         # Persist plan to memory
         self.remember(
@@ -208,18 +236,25 @@ class CoderAgent(BaseAgent):
             project_id=project.id,
         )
 
-        self.notify(f"✅ Coder done: {project.name} — {summary}")
+        if skipped:
+            self.notify(f"⏸ Awaiting approval: {project.name} — {summary}")
+        elif success:
+            self.notify(f"✅ Coder done: {project.name} — {summary}")
+        else:
+            self.notify(f"❌ Coder failed: {project.name} — {summary}")
 
         return self._make_result(
             project=project,
             task="coder",
-            success=True,
+            success=success,
             summary=summary,
             details={
                 "plan": plan,
                 "operations": operations,
                 "applied": applied,
+                "failures": failures,
                 "skipped_for_approval": skipped,
+                "status": status,
             },
             artifacts=applied,
         )

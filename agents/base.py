@@ -1,13 +1,11 @@
 """
 agents/base.py — Base class all agents inherit from.
 
-Wraps OpenHands SDK concepts (LLM, tool execution, event loop) into a clean
-interface. Falls back to direct LiteLLM calls when openhands-ai is not
-installed, so the project runs in "lite" mode for local testing.
+LLM calls go through LiteLLM. Memory writes use the client passed in: a
+SmartMemory (importance scoring) or any object with mem0-style add/search.
 """
 from __future__ import annotations
 
-import json
 import logging
 from abc import ABC, abstractmethod
 from typing import Any
@@ -15,18 +13,9 @@ from typing import Any
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config.loader import Settings, Project
+from memory.smart_memory import SmartMemory
 
 logger = logging.getLogger(__name__)
-
-# ─── Try importing OpenHands; fall back to LiteLLM directly ──────────────────
-
-try:
-    from openhands.agent import Agent as _OHAgent          # type: ignore
-    from openhands.tools import BashTool, FileEditorTool   # type: ignore
-    OPENHANDS_AVAILABLE = True
-except ImportError:
-    OPENHANDS_AVAILABLE = False
-    logger.warning("openhands-ai not installed — running in LiteLLM-direct mode")
 
 try:
     import litellm                                          # type: ignore
@@ -107,7 +96,7 @@ class BaseAgent(ABC):
     def add_tool(self, tool: Any) -> None:
         self._tools.append(tool)
 
-    # ── LLM call (OpenHands or LiteLLM fallback) ──────────────────────────
+    # ── LLM call (LiteLLM) ───────────────────────────────────────────────
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def _call_llm(self, messages: list[dict], system: str = "") -> str:
@@ -130,27 +119,35 @@ class BaseAgent(ABC):
             response = litellm.completion(**kwargs)
             return response.choices[0].message.content or ""
 
-        # Absolute fallback: return empty string and log warning
-        logger.error("Neither openhands-ai nor litellm is available!")
+        logger.error("litellm is not available")
         return ""
 
     # ── Memory helpers ─────────────────────────────────────────────────────
 
     def remember(self, key: str, value: str, project_id: str = "") -> None:
-        if self.memory:
-            try:
-                self.memory.add(
-                    messages=[{"role": "assistant", "content": value}],
-                    user_id=f"agent:{self.name}",
-                    metadata={"key": key, "project": project_id},
-                )
-            except Exception as e:
-                logger.warning(f"Memory write failed: {e}")
+        if not self.memory:
+            return
+        try:
+            if isinstance(self.memory, SmartMemory):
+                # Importance scoring applies to agent writes, not only the CLI.
+                self.memory.remember_important(key, value, project_id=project_id)
+                return
+            self.memory.add(
+                messages=[{"role": "assistant", "content": value}],
+                user_id=f"agent:{self.name}",
+                metadata={"key": key, "project": project_id},
+            )
+        except Exception as e:
+            logger.warning(f"Memory write failed: {e}")
 
     def recall(self, query: str, project_id: str = "") -> str:
         if not self.memory:
             return ""
         try:
+            if isinstance(self.memory, SmartMemory):
+                q = query.lower()
+                memories = self.memory.recall_by_importance(min_score=5, project_id=project_id)
+                return "\n".join(m.value for m in memories if q in m.value.lower())
             results = self.memory.search(
                 query=query,
                 user_id=f"agent:{self.name}",

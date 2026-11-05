@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
-from pathlib import Path
 
 from agents.base import BaseAgent, AgentResult
 from config.loader import Project, Settings
+from tools.fs_stats import scan_project_stats
+from tools.llm_json import parse_llm_json
+from tools.run_cmd import run_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -36,61 +37,18 @@ class MonitorAgent(BaseAgent):
 
     def _run_cmd(self, cmd: list[str], cwd: str) -> tuple[int, str, str]:
         """Run a subprocess command, return (returncode, stdout, stderr)."""
-        try:
-            result = subprocess.run(
-                cmd,
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            return result.returncode, result.stdout, result.stderr
-        except subprocess.TimeoutExpired:
+        result = run_cmd(cmd, cwd, timeout=120)
+        if result.error == "timeout":
             return 1, "", "Command timed out"
-        except FileNotFoundError:
+        if result.error == "not_found":
             return 1, "", f"Command not found: {cmd[0]}"
-        except Exception as e:
-            return 1, "", str(e)
+        if result.error:
+            return 1, "", result.error_detail
+        return result.returncode, result.stdout, result.stderr
 
     def _scan_file_stats(self, path: str) -> dict:
         """Count files, lines, TODOs, large files."""
-        root = Path(path)
-        if not root.exists():
-            return {"error": f"Path not found: {path}"}
-
-        stats = {
-            "total_files": 0,
-            "total_lines": 0,
-            "todo_count": 0,
-            "large_files": [],   # files > 500 lines
-            "file_types": {},
-        }
-
-        ignore_dirs = {".git", "node_modules", "__pycache__", ".venv", "dist", "build"}
-        text_exts = {".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".rb", ".cs"}
-
-        for f in root.rglob("*"):
-            if any(p in f.parts for p in ignore_dirs):
-                continue
-            if f.is_file():
-                stats["total_files"] += 1
-                ext = f.suffix.lower()
-                stats["file_types"][ext] = stats["file_types"].get(ext, 0) + 1
-
-                if ext in text_exts:
-                    try:
-                        lines = f.read_text(errors="ignore").splitlines()
-                        count = len(lines)
-                        stats["total_lines"] += count
-                        stats["todo_count"] += sum(
-                            1 for l in lines if "TODO" in l or "FIXME" in l or "HACK" in l
-                        )
-                        if count > 500:
-                            stats["large_files"].append({"file": str(f.relative_to(root)), "lines": count})
-                    except Exception:
-                        pass
-
-        return stats
+        return scan_project_stats(path)
 
     def _scan_git_status(self, path: str) -> dict:
         """Check for uncommitted changes and stale branches."""
@@ -173,13 +131,7 @@ class MonitorAgent(BaseAgent):
 
         analysis_raw = self._call_llm(messages, system=MONITOR_SYSTEM_PROMPT)
 
-        # Parse LLM response
-        try:
-            # Strip markdown fences if present
-            clean = analysis_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            analysis = json.loads(clean)
-        except (json.JSONDecodeError, AttributeError):
-            analysis = {"raw": analysis_raw, "health_score": 50}
+        analysis = parse_llm_json(analysis_raw) or {"raw": analysis_raw, "health_score": 50}
 
         health = analysis.get("health_score", 50)
         criticals = analysis.get("critical", [])

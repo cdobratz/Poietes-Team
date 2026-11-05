@@ -22,11 +22,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers to a shared path so the non-root user can use them
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN python -m playwright install --with-deps chromium \
-    && chmod -R a+rX /ms-playwright || true
-
 COPY --chown=poietes:poietes . .
 
 # ── Runtime ───────────────────────────────────────────────────────────────────

@@ -22,13 +22,7 @@ pip install -r requirements.txt --quiet
 echo "🔒 Installing security tools..."
 pip install bandit safety pip-audit --quiet
 
-# 4. Install Playwright browsers (optional)
-if command -v playwright &>/dev/null; then
-  echo "🎭 Installing Playwright browsers..."
-  playwright install chromium --with-deps || true
-fi
-
-# 5. Copy config examples if not present
+# 4. Copy config examples if not present
 if [ ! -f config/settings.yaml ]; then
   cp config/settings.example.yaml config/settings.yaml
   echo "📋 Created config/settings.yaml — please fill in your API keys"
@@ -38,7 +32,7 @@ if [ ! -f config/projects.yaml ]; then
   echo "📋 Created config/projects.yaml — add your projects"
 fi
 
-# 6. Create .env template
+# 5. Create .env template
 if [ ! -f .env ]; then
   cat > .env << 'EOF'
 ANTHROPIC_API_KEY=your_anthropic_key_here
