@@ -17,6 +17,18 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 
+def not_implemented(feature: str) -> dict[str, Any]:
+    """Standard result for placeholder skill functions.
+
+    Never report success for an action that did not happen.
+    """
+    return {
+        "success": False,
+        "not_implemented": True,
+        "error": f"{feature} is not implemented yet",
+    }
+
+
 # Type alias for skill action functions
 SkillAction = Callable[..., dict[str, Any]]
 

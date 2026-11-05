@@ -1,6 +1,7 @@
 """
 skills/deploy_skill.py — Deployment operations skill.
 
+STATUS: placeholder. Every action returns {"success": False, "not_implemented": True}.
 Triggers: "deploy", "release", "build", "docker", "k8s", "kubernetes"
 """
 from __future__ import annotations
@@ -8,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from skills.base import Skill
+from skills.base import Skill, not_implemented
 
 logger = logging.getLogger(__name__)
 
@@ -24,15 +25,8 @@ def deploy_docker(image: str, tag: str = "latest") -> dict[str, Any]:
     Returns:
         Deployment result
     """
-    logger.info(f"Deploying Docker: {image}:{tag}")
-    
-    return {
-        "success": True,
-        "action": "docker_deploy",
-        "image": image,
-        "tag": tag,
-        "container_id": f"container_{image.replace('/', '_')}",
-    }
+    logger.info("deploy_docker called, but it is not implemented")
+    return not_implemented("deploy_docker")
 
 
 def deploy_k8s(manifest: str, namespace: str = "default") -> dict[str, Any]:
@@ -46,14 +40,8 @@ def deploy_k8s(manifest: str, namespace: str = "default") -> dict[str, Any]:
     Returns:
         Deployment result
     """
-    logger.info(f"Deploying to Kubernetes namespace: {namespace}")
-    
-    return {
-        "success": True,
-        "action": "k8s_deploy",
-        "namespace": namespace,
-        "resources": ["deployment", "service"],
-    }
+    logger.info("deploy_k8s called, but it is not implemented")
+    return not_implemented("deploy_k8s")
 
 
 def build_image(context: str, tag: str, dockerfile: str = "Dockerfile") -> dict[str, Any]:
@@ -68,15 +56,8 @@ def build_image(context: str, tag: str, dockerfile: str = "Dockerfile") -> dict[
     Returns:
         Build result
     """
-    logger.info(f"Building Docker image: {tag}")
-    
-    return {
-        "success": True,
-        "action": "docker_build",
-        "context": context,
-        "tag": tag,
-        "dockerfile": dockerfile,
-    }
+    logger.info("build_image called, but it is not implemented")
+    return not_implemented("build_image")
 
 
 def rollback(deployment_name: str, revision: str = "previous") -> dict[str, Any]:
@@ -90,20 +71,14 @@ def rollback(deployment_name: str, revision: str = "previous") -> dict[str, Any]
     Returns:
         Rollback result
     """
-    logger.info(f"Rolling back deployment: {deployment_name}")
-    
-    return {
-        "success": True,
-        "action": "rollback",
-        "deployment": deployment_name,
-        "revision": revision,
-    }
+    logger.info("rollback called, but it is not implemented")
+    return not_implemented("rollback")
 
 
 # Skill definition
 skill = Skill(
     name="deploy",
-    description="Deployment operations: Docker, Kubernetes, builds, rollbacks",
+    description="[STUB, not implemented] Deployment operations: Docker, Kubernetes, builds, rollbacks",
     triggers=["deploy", "release", "build", "docker", "k8s", "kubernetes", "rollback"],
     agent_scope=None,
 )
