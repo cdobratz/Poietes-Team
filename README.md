@@ -20,18 +20,19 @@ A modular, hierarchical AI agent system for autonomous software development, mon
 - [Testing & Validation](#testing--validation)
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
+- [License](#license)
 
 ## Overview
 
-Poietes is a production-ready multi-agent system that orchestrates AI-powered development workflows. The system consists of specialized agents that collaborate through a supervisor, each with distinct responsibilities:
+Poietes is a multi-agent system that orchestrates AI-powered development workflows. The system consists of specialized agents that collaborate through a supervisor, each with distinct responsibilities:
 
-- **Autonomous Scanning** — Monitor projects for issues, dead code, and architectural drift
-- **Intelligent Development** — Generate features, fix bugs, and refactor code
-- **Security Auditing** — Automated vulnerability detection and compliance checks
-- **Content Generation** — Auto-generate documentation, changelogs, and READMEs
-- **Arbitrary Directory Scanning** — Scan and analyze any local filesystem without pre-configuration
-- **Extensible Skills** — Add new capabilities by dropping skill files into `skills/` directory
-- **Smart Memory** — Persistent, importance-weighted memory with automatic cleanup
+- **Project scans**: file counts, TODO markers, git status, and outdated dependencies
+- **Code edits**: the coder agent turns a task description into file operations
+- **Security checks**: Bandit, Semgrep, and dependency output when those tools are enabled
+- **Docs drafts**: README, changelog, and docstring text
+- **Directory scans**: FilesystemAgent can scan a path that is not listed in `projects.yaml`
+- **Skill list**: `python main.py skills list` prints modules from `skills/`
+- **Memory**: agents use Mem0 when it is configured, and an in-process fallback otherwise
 
 ## Architecture
 
@@ -39,11 +40,11 @@ Poietes is a production-ready multi-agent system that orchestrates AI-powered de
 
 ```bash
 SupervisorAgent (orchestrator)
-├── MonitorAgent          — Project analysis, drift detection, dead code removal
-├── CoderAgent            — Feature development, bug fixes, refactoring (via Serena MCP)
-├── SecurityAgent         — Vulnerability scanning (Bandit, Semgrep, dependencies)
-├── ContentAgent          — Documentation, changelogs, README generation
-└── FilesystemAgent       — Arbitrary directory scanning and analysis
+├── MonitorAgent          - file stats, TODOs, git status, dependencies
+├── CoderAgent            - file edits from a task, optional Serena context
+├── SecurityAgent         - Bandit, Semgrep, dependency checks
+├── ContentAgent          - README, changelog, docstrings
+└── FilesystemAgent       - directory scan, search, tree, large files
 ```
 
 ### Data Flow
@@ -77,88 +78,65 @@ Scan and analyze any local directory without pre-configuration.
 **Capabilities:**
 - `scan_directory(path, pattern)` — Recursive directory scan with glob patterns
 - `search_files(path, query)` — Content search (grep-like) across files
-- `get_file_info(path)` — File metadata (size, creation date, type)
-- `list_tree(path, max_depth)` — Pretty-printed directory tree
+- `get_file_info(path)`: file metadata (size, modified time, type)
+- `list_tree(path, max_depth)`: directory tree as nested data (the CLI prints JSON)
 - `find_large_files(path, min_lines)` — Identify large/complex files
 
 **Use Cases:**
-- Analyze unfamiliar codebases quickly
-- Find technical debt (long files, TODO markers, dead imports)
-- Locate configuration mismatches across environments
-- Generate project structure reports
+- List files under a directory, with an optional glob
+- Search file contents
+- Show a directory tree
+- List files over a line-count threshold
 
-### 2. Skill System: Extensible Agent Capabilities
+### 2. Skill modules
 
-Define and register reusable skills that agents can discover and execute dynamically.
+`skills/` holds modules that `python main.py skills list` can import. The agents do not load or call them.
 
-**How It Works:**
-
-Each skill is a simple Python module in `skills/`:
+A module exports a `skill` value:
 
 ```python
-# skills/github_skill.py
 from skills.base import Skill
 
-class GitHubSkill(Skill):
-    name = "GitHub Operations"
-    description = "Create PRs, manage issues, review code"
-    triggers = ["github", "pr", "pull request", "issue"]
-    
-    async def action(self, context: dict) -> dict:
-        # Implementation
-        pass
+def do_something(**kwargs) -> dict:
+    return {"success": True}
+
+skill = Skill(
+    name="example",
+    description="Example skill",
+    triggers=["example", "demo"],
+    action=do_something,
+)
 ```
 
-**Built-in Skills:**
-- `github_skill.py` — GitHub PR/issue management
-- `gitlab_skill.py` — GitLab operations
-- `debug_skill.py` — Debugging helpers, log analysis
-- `deploy_skill.py` — Deployment automation
+**Bundled modules:**
+- `github_skill.py`
+- `gitlab_skill.py`
+- `debug_skill.py`
+- `deploy_skill.py`
 
-**Adding New Skills:**
+The list command prints `name`, `description`, and `triggers` for each exported `skill`. The bundled action functions are local placeholders. They are not called by `python main.py run`.
 
-1. Create a new file in `skills/` with a `Skill` subclass
-2. Define `name`, `description`, and `triggers`
-3. Implement the `action()` method
-4. Agents automatically discover and use it
+### 3. Memory
 
-No code changes needed, skills are loaded dynamically on agent initialization.
+Agents store and search through `memory/mem0_client.py`. That client uses Mem0 when an API key or MCP URL is configured. Otherwise it keeps an in-process list that ends when the process exits.
 
-### 3. Smart Memory Management: Noise-Free Persistence
-
-Intelligent, importance-weighted memory prevents unbounded growth while preserving critical context.
-
-**Features:**
-
-| Feature | Description |
-|---------|------------|
-| **Importance Scoring** | Memories scored 1-10 based on keywords and usage |
-| **Auto Cleanup** | Low value memories (score < 4) expire after 7 days |
-| **Project Isolation** | Max 50 important memories per project with LRU eviction |
-| **Distinction** | "Remember" (persistent) vs "Context" (ephemeral) |
-| **Semantic Search** | Query memories by meaning, not just keywords |
-
-**Memory API:**
+`SmartMemory` in `memory/smart_memory.py` is separate. It scores text from keywords, keeps at most 50 important entries per project id, and `cleanup_low_value()` drops entries with score below 4 that are at least 7 days old. `python main.py memory stats` and `python main.py memory cleanup` each create a new in-process `SmartMemory`. They do not read agent memory.
 
 ```python
 from memory.smart_memory import SmartMemory
 
 memory = SmartMemory()
 
-# Store important findings
 memory.remember_important(
     key="project_arch",
     value="Uses FastAPI + PostgreSQL",
     project_id="my-app",
-    importance_score=9
+    score=9,
 )
 
-# Query
 important_facts = memory.recall_by_importance(min_score=7)
 recent = memory.recall_recent(days=3)
-
-# Cleanup (automatic, can also run manually)
-memory.cleanup_low_value()
+removed = memory.cleanup_low_value()
 ```
 
 ## Technology Stack
@@ -172,7 +150,7 @@ memory.cleanup_low_value()
 | **Browser** | Playwright MCP                      |
 | **Git**     | GitHub / GitLab (Personal Access Token) |
 | **Messaging** | Telegram Bot + CLI               |
-| **Runtime** | Local / Docker / Kubernetes         |
+| **Runtime** | Local / Docker                      |
 | **Language** | Python 3.10+                       |
 
 ## Prerequisites
@@ -240,69 +218,49 @@ python main.py validate
 
 ### settings.yaml
 
-Controls LLM providers, API keys, memory behavior, and runtime settings.
+Copy `config/settings.example.yaml`. It sets LLM backends, agent model assignments, MCP servers, messaging, git tokens, workspace approval, and security tools.
 
 ```yaml
 llm:
-  provider: "anthropic"  # or: grok, ollama, minimax
-  model: "claude-opus-4-1"
-  temperature: 0.7
-
-memory:
-  enabled: true
-  provider: "mem0"  # or: local
-  max_per_project: 50
-  cleanup_after_days: 7
-  cleanup_interval: 3600  # seconds
-
-agents:
-  monitor:
-    enabled: true
-    scan_interval: 3600
-  coder:
-    enabled: true
-  security:
-    enabled: true
-  content:
-    enabled: true
-  filesystem:
-    enabled: true
+  default: claude
+  backends:
+    claude:
+      provider: anthropic
+      model: claude-sonnet-4-20250514
+      api_key: "${ANTHROPIC_API_KEY}"
 
 workspace:
-  type: "local"  # or: docker
-  docker_image: "poietes:latest"
+  type: local
+  approval_required: true
 
-github:
-  enabled: true
-  api_token: "${GITHUB_TOKEN}"
-
-telegram:
-  enabled: false
-  bot_token: "${TELEGRAM_BOT_TOKEN}"
+messaging:
+  telegram:
+    enabled: false
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
 ```
 
 ### projects.yaml
 
-Define target projects for monitoring and development.
+Copy `config/projects.example.yaml`. Each project needs an `id`, and can set `path`, `repo`, `language`, and per-agent `tasks`.
 
 ```yaml
 projects:
-  - name: "my-api"
-    path: "/workspace/my-api"
-    repo_url: "https://github.com/user/my-api"
-    branch: "main"
-    type: "python"  # python, javascript, go, rust, etc.
-    enable_security_scan: true
-    enable_monitoring: true
-
-  - name: "frontend-app"
-    path: "/workspace/frontend-app"
-    repo_url: "https://github.com/user/frontend-app"
-    type: "javascript"
-    enable_security_scan: true
+  - id: api-backend
+    name: "REST API Backend"
+    path: "/workspace/api-backend"
+    repo: "github.com/org/api-backend"
+    branch: main
+    language: python
+    enabled: true
+    tasks:
+      monitor: true
+      coder: true
+      security: true
+      content: true
 ```
 
-Note: **FilesystemAgent doesn't require pre-configured projects** it scans any path provided at runtime.
+FilesystemAgent can scan a path passed at runtime. It does not need that path to be listed in `projects.yaml`.
 
 ## Usage
 
@@ -324,14 +282,13 @@ python main.py fs search /path "import os"
 python main.py fs tree /path --depth 3
 
 # Find large files
-python main.py fs find-large /path --min-lines 500
+python main.py fs large /path --min-lines 500
 
 # List available skills
 python main.py skills list
-python main.py skills show github
 
 # Memory operations
-python main.py memory recall --min-importance 7
+python main.py memory stats
 python main.py memory cleanup
 
 # Validate setup
@@ -341,84 +298,57 @@ python main.py validate
 ### Telegram Bot (If Enabled)
 
 ```txt
-/scan @my-api — scan project
-/task create a feature for X — run a task
-/status — show agent status
-/memory recall — query memory
-/help — show commands
+/run <task>: run a task (defaults to "scan all projects")
+/status: reply that the agent team is running
 ```
 
 ### Python API
 
 ```python
 from agents.supervisor_agent import SupervisorAgent
-from config.config_loader import load_config
+from config.loader import load_projects, load_settings
 
-config = load_config()
-supervisor = SupervisorAgent(config)
+settings = load_settings()
+registry = load_projects()
+supervisor = SupervisorAgent(settings, registry)
 
-result = await supervisor.run_task(
-    task="scan /workspace for security issues",
-    project_id="my-app"
-)
-print(result)
+results = supervisor.run("scan configured projects for security issues")
+for result in results:
+    print(result)
 ```
 
 ## Features Guide
 
-### MonitorAgent: Continuous Monitoring
+### MonitorAgent
 
-Scans configured projects for:
-- Dead code and unused imports
-- Architectural drift
-- Missing documentation
-- Code complexity issues
-- Dependency updates available
-- Test coverage gaps
+For a project with a local path, the monitor collects:
+- File counts, line counts, and TODO, FIXME, and HACK markers
+- Files longer than 500 lines
+- Git status and recent commits
+- Outdated packages from `pip list --outdated` (Python) or `npm outdated` (JavaScript or TypeScript), when those commands succeed
 
-**Trigger keywords:** `monitor`, `scan`, `issues`, `drift`, `dead code`
+An LLM call then summarizes that report. There is no scheduled scanner in this repo.
 
-### CoderAgent Intelligent Development
+### CoderAgent
 
-Develops features through:
-- Natural language specifications
-- Automated code generation (via Serena MCP)
-- Test-driven development
-- Refactoring recommendations
-- Bug fixing
+Given a task string, the coder asks the LLM for a plan and file operations (`replace`, `insert`, `delete`, `create`). Serena context is included only when the Serena MCP server is enabled. Writes are skipped when `workspace.approval_required` is true.
 
-**Trigger keywords:** `develop`, `feature`, `fix`, `refactor`, `implement`
+### SecurityAgent
 
-### SecurityAgent Vulnerability Detection
-
-Audits with:
-- Bandit (Python security)
-- Semgrep (multi-language patterns)
-- Dependency checker (CVE scanning)
-- SAST/DAST analysis
-
-**Trigger keywords:** `security`, `audit`, `vulnerabilities`, `scan`, `penetration`
+When the matching flag in `settings.security` is true, the security agent runs Bandit, Semgrep, and a dependency command. Python uses `pip-audit`, and falls back to `safety` if `pip-audit` is not installed. JavaScript and TypeScript use `npm audit`. An LLM call summarizes the tool output. If a tool is disabled or missing, that part of the report is empty.
 
 ### ContentAgent Documentation Generation
 
 Generates:
-- API documentation
+- README files
 - CHANGELOG entries
-- README updates
-- Architecture diagrams
-- Contributing guides
+- Docstrings
 
-**Trigger keywords:** `docs`, `readme`, `changelog`, `document`, `generate`
+`run_task` writes a README when the task mentions `readme` or is empty, a changelog when the task mentions `changelog` or is empty, and docstrings when the task mentions `docstring` or `docs`. Files are written only when `workspace.approval_required` is false.
 
-### FilesystemAgent Directory Analysis
+### FilesystemAgent
 
-Capabilities:
-- Scan any directory without pre-configuration
-- Find patterns, large files, duplicates
-- Generate structure reports
-- Identify technical debt markers
-
-**Trigger keywords:** `scan`, `filesystem`, `directory`, `tree`, `search`
+`scan_directory`, `search_files`, `get_file_info`, `list_tree`, and `find_large_files` work on any local path. The CLI commands are `fs scan`, `fs search`, `fs info`, `fs tree`, and `fs large`.
 
 ## Testing & Validation
 
@@ -429,12 +359,10 @@ python main.py validate
 ```
 
 Checks:
-- ✅ API keys configured
-- ✅ Projects exist on disk
-- ✅ Git repositories reachable
-- ✅ MCP servers running (if enabled)
-- ✅ Skills loadable
-- ✅ Memory configured correctly
+- `config/settings.yaml` loads, or `config/settings.example.yaml` when settings are missing
+- `config/projects.yaml` loads, or `config/projects.example.yaml` when the projects file is missing, and the enabled project count is printed
+- The default LLM backend name is printed
+- A missing API key is reported when the provider is not Ollama
 
 ### Test FilesystemAgent
 
@@ -449,53 +377,41 @@ python main.py fs search /home/user/projects "TODO"
 python main.py fs tree /home/user/projects --depth 2
 
 # Find large files
-python main.py fs find-large /home/user/projects --min-lines 300
+python main.py fs large /home/user/projects --min-lines 300
 ```
 
-### Test Skills System
+### List skills
 
 ```bash
-# List all loaded skills
 python main.py skills list
-
-# Show details for a skill
-python main.py skills show github
-
-# Run a task that triggers a skill
-python main.py run --task "create a github pr for my feature"
 ```
 
-### Test Memory System
+This imports skill modules from `skills/` and prints them. It does not run skill actions.
+
+### Call SmartMemory directly
 
 ```python
 from memory.smart_memory import SmartMemory
 
-# Test storage
 m = SmartMemory()
 m.remember_important("test", "important info", project_id="test")
 print(m.recall_by_importance(min_score=5))
-
-# Test cleanup
 m.cleanup_low_value()
 ```
 
-### Full Integration Test
+This object lives only in the current process. It is not the store agents use.
+
+### Run a supervisor task
 
 ```bash
-# Run a complex task that uses multiple agents
 python main.py run --task "scan my project for issues, find security vulnerabilities, and generate a report"
 ```
 
-### Success Criteria
+`run` needs `config/settings.yaml`, `config/projects.yaml`, and a reachable LLM. It is not part of the pytest suite.
 
-- ✅ FilesystemAgent scans any directory path
-- ✅ Skills load automatically from `skills/` directory
-- ✅ Agents use relevant skills based on task triggers
-- ✅ Memory stores and recalls important information
-- ✅ Low-value memories auto-cleanup after 7 days
-- ✅ Memory limits prevent unbounded growth
-- ✅ `python main.py validate` passes
-- ✅ All components work via CLI and Python API
+### Automated tests
+
+`tests/test_agents.py` exercises monitor, coder, security, and content agents with a mocked LLM, plus the in-process memory fallback. `tests/test_templates.py` loads the YAML templates in `templates/`. Run them with `pytest`.
 
 ## Project Structure
 
@@ -503,7 +419,7 @@ python main.py run --task "scan my project for issues, find security vulnerabili
 poietes-team/
 ├── agents/                      # Agent implementations
 │   ├── __init__.py
-│   ├── base_agent.py           # Base class for all agents
+│   ├── base.py                 # Base class for all agents
 │   ├── supervisor_agent.py     # Orchestrator
 │   ├── monitor_agent.py        # Scanning & monitoring
 │   ├── coder_agent.py          # Development
@@ -519,14 +435,12 @@ poietes-team/
 ├── memory/                      # Memory management
 │   ├── __init__.py
 │   ├── smart_memory.py         # Importance-weighted memory
-│   ├── mem0_client.py          # Mem0 integration
-│   └── cleanup.py              # Auto-cleanup logic
+│   └── mem0_client.py          # Mem0 integration
 ├── tools/                       # Utility tools
-│   ├── git_tools.py            # Git operations
-│   └── security_tools.py       # Security utilities
+│   └── git_tools.py            # Git operations
 ├── config/                      # Configuration
-│   ├── config_loader.py        # YAML parsing
-│   ├── settings.example.yaml   # LLM, memory settings
+│   ├── loader.py               # YAML parsing
+│   ├── settings.example.yaml   # LLM and runtime settings
 │   └── projects.example.yaml   # Project definitions
 ├── docker/                      # Docker support
 │   ├── Dockerfile              # Container image
@@ -534,33 +448,27 @@ poietes-team/
 │   └── mcp-compose.yml         # MCP servers only
 ├── tests/                       # Test suite
 │   ├── test_agents.py
-│   ├── test_skills.py
-│   ├── test_memory.py
-│   └── test_filesystem.py
+│   └── test_templates.py
 ├── main.py                      # CLI entry point
 ├── requirements.txt             # Python dependencies
+├── LICENSE                      # Apache License 2.0
+├── NOTICE                       # Copyright notice
 └── README.md                    # This file
 ```
 
-## Docker (Production)
+## Docker
 
 ### Single Container
 
 ```bash
-docker build -t poietes:latest .
+docker build -f docker/Dockerfile -t poietes:latest .
 docker run -v /path/to/config:/app/config poietes:latest
 ```
 
 ### Multi-Container (with MCP servers)
 
 ```bash
-docker-compose up -d
-```
-
-### Kubernetes
-
-```bash
-kubectl apply -f k8s/
+docker compose -f docker/docker-compose.yml up -d
 ```
 
 ## Contributing
@@ -574,28 +482,27 @@ Contributions are welcome! Here are common ways to extend Poietes:
 ```python
 from skills.base import Skill
 
-class MySkill(Skill):
-    name = "My Skill"
-    description = "Does something cool"
-    triggers = ["keyword1", "keyword2"]
-    
-    async def action(self, context: dict) -> dict:
-        # Your implementation
-        return {"status": "success", "result": "..."}
+def do_something(**kwargs) -> dict:
+    return {"status": "success"}
+
+skill = Skill(
+    name="My Skill",
+    description="Short description",
+    triggers=["keyword1", "keyword2"],
+    action=do_something,
+)
 ```
 
-2. Test it:
+2. List it:
 
 ```bash
-python main.py skills show my
-python main.py run --task "keyword1 to do something"
+python main.py skills list
 ```
 
 ### Add a New Agent
 
 1. Subclass `BaseAgent` in `agents/new_agent.py`
-2. Register it in `SupervisorAgent`
-3. Define its triggers and responsibilities
+2. Construct it inside `SupervisorAgent` and add it to `self._agents`
 
 ### Improve Memory
 
@@ -613,10 +520,14 @@ Include:
 
 ## Support
 
-- **Docs:** See README.md and doc/
+- **Docs:** See README.md
 - **Issues:** GitHub Issues
 - **Discussions:** GitHub Discussions
 - **Email:** info@poietes.org
+
+## License
+
+This project is open source under the Apache License 2.0. It is developed by Poietes LLC.
 
 ---
 
