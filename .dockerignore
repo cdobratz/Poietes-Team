@@ -1,0 +1,17 @@
+# Never bake secrets, local config, or VCS data into an image.
+.git
+.gitignore
+.env
+.env.*
+config/settings.yaml
+config/projects.yaml
+**/__pycache__
+**/*.pyc
+.venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+*.egg-info
+dist
+build
+images

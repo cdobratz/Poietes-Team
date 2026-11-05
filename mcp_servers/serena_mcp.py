@@ -14,6 +14,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from tools.safe_paths import UnsafePathError, safe_join
+
 logger = logging.getLogger(__name__)
 
 
@@ -112,7 +114,10 @@ class LocalSerenaShim:
         op = operation.get("op", "")
         file_rel = operation.get("file", "")
         content = operation.get("content", "")
-        target = Path(project_path) / file_rel
+        try:
+            target = safe_join(project_path, file_rel)
+        except UnsafePathError as e:
+            return {"error": f"Unsafe path rejected: {e}"}
 
         if op == "create":
             target.parent.mkdir(parents=True, exist_ok=True)

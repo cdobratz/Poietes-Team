@@ -9,7 +9,7 @@ import logging
 import traceback
 from typing import Any
 
-from skills.base import Skill
+from skills.base import Skill, not_implemented
 
 logger = logging.getLogger(__name__)
 
@@ -85,21 +85,14 @@ def check_logs(log_pattern: str, lines: int = 50) -> dict[str, Any]:
     Returns:
         Log entries
     """
-    # This would read actual log files in a real implementation
-    return {
-        "success": True,
-        "pattern": log_pattern,
-        "entries": [
-            f"Sample log entry {i} matching {log_pattern}"
-            for i in range(min(5, lines))
-        ],
-    }
+    logger.info("check_logs called, but it is not implemented")
+    return not_implemented("check_logs")
 
 
 # Skill definition
 skill = Skill(
     name="debug",
-    description="Debugging helpers: error analysis, traceback formatting, log checking",
+    description="Debugging helpers: error analysis and traceback formatting (check_logs is a stub)",
     triggers=["debug", "trace", "log", "error", "exception", "stack", "fix"],
     agent_scope=None,
 )

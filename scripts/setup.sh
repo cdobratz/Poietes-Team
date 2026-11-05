@@ -7,9 +7,9 @@ echo "=== OpenHands Agent Team — Setup ==="
 
 # 1. Python version check
 python_version=$(python3 --version 2>&1 | awk '{print $2}')
-required="3.10"
-if ! python3 -c "import sys; exit(0 if sys.version_info >= (3,10) else 1)"; then
-  echo "❌ Python 3.10+ required (found $python_version)"
+required="3.11"
+if ! python3 -c "import sys; exit(0 if sys.version_info >= (3,11) else 1)"; then
+  echo "❌ Python 3.11+ required (found $python_version)"
   exit 1
 fi
 echo "✅ Python $python_version"

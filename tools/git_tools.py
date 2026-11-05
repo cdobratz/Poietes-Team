@@ -4,8 +4,10 @@ Handles cloning, branch management, commits, and pull requests.
 """
 from __future__ import annotations
 
+import base64
 import logging
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -29,18 +31,38 @@ except ImportError:
 
 # ─── Git subprocess helpers ───────────────────────────────────────────────────
 
-def _git(args: list[str], cwd: str, env: dict | None = None) -> tuple[int, str]:
+_URL_CREDS_RE = re.compile(r"(https?://)[^/@\s]+@")
+
+
+def scrub_secrets(text: str, secrets: tuple[str, ...] | list[str] = ()) -> str:
+    """Remove tokens and URL credentials from text destined for logs or errors."""
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "***")
+            text = text.replace(base64.b64encode(secret.encode()).decode(), "***")
+    return _URL_CREDS_RE.sub(r"\1***@", text)
+
+
+def _git(
+    args: list[str],
+    cwd: str,
+    env: dict | None = None,
+    secrets: tuple[str, ...] | list[str] = (),
+) -> tuple[int, str]:
     run_env = os.environ.copy()
+    # Never let git prompt for credentials (would hang a non-interactive run).
+    run_env.setdefault("GIT_TERMINAL_PROMPT", "0")
     if env:
         run_env.update(env)
+    secrets = tuple(secrets)
     try:
         r = subprocess.run(
             ["git"] + args,
             cwd=cwd, capture_output=True, text=True, timeout=60, env=run_env,
         )
-        return r.returncode, (r.stdout + r.stderr).strip()
+        return r.returncode, scrub_secrets((r.stdout + r.stderr).strip(), secrets)
     except Exception as e:
-        return 1, str(e)
+        return 1, scrub_secrets(str(e), secrets)
 
 
 class GitManager:
@@ -73,12 +95,13 @@ class GitManager:
             raise ValueError(f"Project {project.id} has no repo configured")
 
         repo_url = self._build_clone_url(project)
+        auth_env, secrets = self._auth_env(project)
         target = Path(workspace) / project.id
         target.mkdir(parents=True, exist_ok=True)
 
         if (target / ".git").exists():
             logger.info(f"Repo already cloned: {target}")
-            rc, out = _git(["pull", "--rebase"], str(target))
+            rc, out = _git(["pull", "--rebase"], str(target), env=auth_env, secrets=secrets)
             if rc != 0:
                 logger.warning(f"git pull failed: {out}")
             return str(target)
@@ -87,26 +110,50 @@ class GitManager:
         rc, out = _git(
             ["clone", "--branch", project.branch, repo_url, str(target)],
             cwd=workspace,
+            env=auth_env,
+            secrets=secrets,
         )
         if rc != 0:
             raise RuntimeError(f"Clone failed: {out}")
 
         return str(target)
 
-    def _build_clone_url(self, project: Project) -> str:
-        repo = project.repo
-        # Normalize: strip https:// prefix if present
+    @staticmethod
+    def _normalize_repo(repo: str) -> str:
         repo = repo.removeprefix("https://").removeprefix("http://")
+        return repo.removesuffix(".git")
 
-        if repo.startswith("github.com"):
-            token = self.cfg.github.token
-            return f"https://{token}@{repo}.git" if token else f"https://{repo}.git"
-
-        if repo.startswith("gitlab.com") or "gitlab" in repo:
-            token = self.cfg.gitlab.token
-            return f"https://oauth2:{token}@{repo}.git" if token else f"https://{repo}.git"
-
+    def _build_clone_url(self, project: Project) -> str:
+        """Clone URL without credentials (auth is injected via the environment)."""
+        repo = self._normalize_repo(project.repo)
+        if repo.startswith("github.com") or "gitlab" in repo:
+            return f"https://{repo}.git"
         return f"https://{repo}"
+
+    def _auth_env(self, project: Project) -> tuple[dict[str, str], tuple[str, ...]]:
+        """Build git auth via GIT_CONFIG_* env vars (git >= 2.31).
+
+        The token is sent as an HTTP header for the repo's host only. It never
+        appears in the URL, argv, or ``.git/config``. Returns (env, secrets).
+        """
+        repo = self._normalize_repo(project.repo)
+        if repo.startswith("github.com"):
+            user, token = "x-access-token", self.cfg.github.token
+        elif repo.startswith("gitlab.com") or "gitlab" in repo:
+            user, token = "oauth2", self.cfg.gitlab.token
+        else:
+            return {}, ()
+        if not token:
+            return {}, ()
+
+        host = repo.split("/", 1)[0]
+        basic = base64.b64encode(f"{user}:{token}".encode()).decode()
+        env = {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": f"http.https://{host}/.extraheader",
+            "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}",
+        }
+        return env, (token, basic)
 
     # ── Branch management ─────────────────────────────────────────────────
 
@@ -130,10 +177,19 @@ class GitManager:
             return False
         return True
 
-    def push_branch(self, project_path: str, branch: str, remote: str = "origin") -> bool:
+    def push_branch(
+        self,
+        project_path: str,
+        branch: str,
+        remote: str = "origin",
+        project: Project | None = None,
+    ) -> bool:
+        auth_env, secrets = self._auth_env(project) if project else ({}, ())
         rc, out = _git(
             ["push", "--set-upstream", remote, branch],
             cwd=project_path,
+            env=auth_env,
+            secrets=secrets,
         )
         if rc != 0:
             logger.warning(f"Push failed: {out}")
@@ -167,20 +223,20 @@ class GitManager:
     ) -> str | None:
         try:
             # Extract "owner/repo" from "github.com/owner/repo"
-            parts = repo_str.replace("github.com/", "").strip("/").rstrip(".git")
+            parts = repo_str.replace("github.com/", "").strip("/").removesuffix(".git")
             repo = self._gh.get_repo(parts)
             pr = repo.create_pull(title=title, body=body, head=head, base=base)
             logger.info(f"GitHub PR created: {pr.html_url}")
             return pr.html_url
         except Exception as e:
-            logger.error(f"GitHub PR failed: {e}")
+            logger.error(f"GitHub PR failed: {scrub_secrets(str(e), (self.cfg.github.token,))}")
             return None
 
     def _open_gitlab_mr(
         self, repo_str: str, head: str, base: str, title: str, body: str
     ) -> str | None:
         try:
-            path = repo_str.split("gitlab.com/")[-1].rstrip(".git")
+            path = repo_str.split("gitlab.com/")[-1].removesuffix(".git")
             project = self._glab.projects.get(path)
             mr = project.mergerequests.create({
                 "source_branch": head,
@@ -191,7 +247,7 @@ class GitManager:
             logger.info(f"GitLab MR created: {mr.web_url}")
             return mr.web_url
         except Exception as e:
-            logger.error(f"GitLab MR failed: {e}")
+            logger.error(f"GitLab MR failed: {scrub_secrets(str(e), (self.cfg.gitlab.token,))}")
             return None
 
     # ── Status helpers ────────────────────────────────────────────────────
