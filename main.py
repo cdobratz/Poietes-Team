@@ -105,6 +105,14 @@ def bot():
         console.print("[yellow]Telegram is disabled in settings.yaml[/yellow]")
         raise typer.Exit(1)
 
+    tg = settings.messaging.telegram
+    if not (tg.chat_id or tg.allowed_chat_ids):
+        console.print(
+            "[red]Refusing to start: set messaging.telegram.chat_id (or allowed_chat_ids) "
+            "so only your chat can send commands.[/red]"
+        )
+        raise typer.Exit(1)
+
     console.print("[cyan]Starting Telegram bot...[/cyan]")
 
     supervisor_ref: list = []

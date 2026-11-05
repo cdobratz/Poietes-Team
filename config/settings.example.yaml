@@ -9,12 +9,12 @@ llm:
     claude:
       provider: anthropic
       model: claude-sonnet-4-20250514
-      api_key: "${ANTHROPIC_API_KEY}" # reads from env var
+      api_key: "${ANTHROPIC_API_KEY}" # required: unset ${VAR} fails loudly. Use ${VAR:-default} for optional values
 
     grok:
       provider: xai
       model: grok-3
-      api_key: "${XAI_API_KEY}"
+      api_key: "${XAI_API_KEY:-}"
 
     ollama:
       provider: ollama
@@ -24,7 +24,7 @@ llm:
     minimax:
       provider: minimax
       model: abab6.5s-chat
-      api_key: "${MINIMAX_API_KEY}"
+      api_key: "${MINIMAX_API_KEY:-}"
 
 # ─── Agent Assignments ───────────────────────────────────────────────────────
 agents:
@@ -55,9 +55,9 @@ mcp:
     enabled: true
 
   mem0:
-    url: "http://localhost:8002/mcp"
-    enabled: true
-    api_key: "${MEM0_API_KEY}"      # leave blank for self-hosted
+    url: "http://localhost:8002/mcp"  # only if you run your own Mem0 MCP server
+    enabled: false
+    api_key: "${MEM0_API_KEY:-}"      # set to use Mem0 cloud; blank = in-memory (not persisted)
 
   playwright:
     url: "http://localhost:8003/mcp"
@@ -67,8 +67,10 @@ mcp:
 messaging:
   telegram:
     enabled: false
-    bot_token: "${TELEGRAM_BOT_TOKEN}"
-    chat_id: "${TELEGRAM_CHAT_ID}"
+    bot_token: "${TELEGRAM_BOT_TOKEN:-}"
+    chat_id: "${TELEGRAM_CHAT_ID:-}"   # only this chat (plus allowed_chat_ids) may send commands
+    allowed_chat_ids: []               # extra chat IDs allowed to send commands
+    max_concurrent_runs: 1             # simultaneous /run tasks; extra requests are refused
 
   cli:
     enabled: true
@@ -78,13 +80,13 @@ messaging:
 git:
   github:
     enabled: true
-    token: "${GITHUB_TOKEN}"
+    token: "${GITHUB_TOKEN:-}"
     default_branch: main
     auto_pr: false                  # set true to auto-open PRs
 
   gitlab:
     enabled: false
-    token: "${GITLAB_TOKEN}"
+    token: "${GITLAB_TOKEN:-}"
     url: "https://gitlab.com"
 
 # ─── Workspace ───────────────────────────────────────────────────────────────
