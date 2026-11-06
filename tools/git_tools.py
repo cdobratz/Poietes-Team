@@ -6,12 +6,11 @@ from __future__ import annotations
 
 import base64
 import logging
-import os
 import re
-import subprocess
 from pathlib import Path
 
 from config.loader import GitConfig, Project
+from tools.run_cmd import run_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -49,20 +48,20 @@ def _git(
     env: dict | None = None,
     secrets: tuple[str, ...] | list[str] = (),
 ) -> tuple[int, str]:
-    run_env = os.environ.copy()
     # Never let git prompt for credentials (would hang a non-interactive run).
-    run_env.setdefault("GIT_TERMINAL_PROMPT", "0")
-    if env:
-        run_env.update(env)
     secrets = tuple(secrets)
-    try:
-        r = subprocess.run(
-            ["git"] + args,
-            cwd=cwd, capture_output=True, text=True, timeout=60, env=run_env,
-        )
-        return r.returncode, scrub_secrets((r.stdout + r.stderr).strip(), secrets)
-    except Exception as e:
-        return 1, scrub_secrets(str(e), secrets)
+    result = run_cmd(
+        ["git"] + args,
+        cwd,
+        timeout=60,
+        env=env,
+        inherit_env=True,
+        git_no_prompt=True,
+    )
+    if result.error:
+        detail = result.error_detail or result.error
+        return 1, scrub_secrets(detail, secrets)
+    return result.returncode, scrub_secrets((result.stdout + result.stderr).strip(), secrets)
 
 
 class GitManager:

@@ -159,8 +159,10 @@ class TestCoderAgent:
         agent = CoderAgent(mock_settings, mock_memory)
         with patch.object(agent, "_call_llm", return_value=LLM_CODER_RESPONSE):
             result = agent.run_task(sample_project, "add subtract function")
-        assert result.success
+        assert result.success is False
         assert result.details["skipped_for_approval"] is True
+        assert result.details["status"] == "awaiting_approval"
+        assert "subtract" not in (Path(sample_project.path) / "utils.py").read_text()
 
     def test_run_task_applies_ops(self, mock_settings, mock_memory, sample_project):
         mock_settings.workspace.approval_required = False
@@ -231,3 +233,21 @@ class TestInMemoryFallback:
         mem.add([{"role": "user", "content": "secret data"}], user_id="agent:monitor")
         results = mem.search("secret", user_id="agent:coder")
         assert len(results["results"]) == 0
+
+
+def test_agent_remember_uses_smart_memory_importance():
+    from memory.smart_memory import SmartMemory
+
+    memory = SmartMemory()
+    agent = MonitorAgent(Settings(
+        llm=LLMConfig(
+            default="claude",
+            backends={"claude": LLMBackend(provider="anthropic", model="m", api_key="k")},
+        ),
+        workspace=WorkspaceConfig(approval_required=False),
+    ), memory)
+    agent.remember("scan:p", "health score is 75", project_id="p")
+    stored = memory.recall_by_importance(min_score=7, project_id="p")
+    assert stored and stored[0].score >= 7
+    assert "75" in agent.recall("health score", "p")
+    assert agent.recall("unrelated query", "p") == ""

@@ -50,6 +50,8 @@ class Skill:
     triggers: list[str] = field(default_factory=list)
     action: SkillAction | None = None
     agent_scope: list[str] | None = None
+    # False skills stay registered but are hidden from list/trigger lookup.
+    implemented: bool = True
     
     def matches_trigger(self, text: str) -> bool:
         """Check if the given text matches any of this skill's triggers."""
@@ -95,7 +97,12 @@ class SkillRegistry:
         """Get a skill by name."""
         return self._skills.get(name)
     
-    def find_by_trigger(self, text: str, agent_name: str | None = None) -> list[Skill]:
+    def find_by_trigger(
+        self,
+        text: str,
+        agent_name: str | None = None,
+        include_unimplemented: bool = False,
+    ) -> list[Skill]:
         """
         Find all skills matching the given text triggers.
         
@@ -112,14 +119,23 @@ class SkillRegistry:
             if agent_name and skill.agent_scope:
                 if agent_name not in skill.agent_scope:
                     continue
+            if not include_unimplemented and not skill.implemented:
+                continue
             
             if skill.matches_trigger(text):
                 matches.append(skill)
         
         return matches
     
-    def list_all(self, agent_name: str | None = None) -> list[Skill]:
-        """List all registered skills, optionally filtered by agent."""
+    def list_all(
+        self,
+        agent_name: str | None = None,
+        include_unimplemented: bool = False,
+    ) -> list[Skill]:
+        """List registered skills, optionally filtered by agent.
+
+        Unimplemented stubs are omitted unless ``include_unimplemented`` is set.
+        """
         skills = list(self._skills.values())
         
         if agent_name:
@@ -127,6 +143,8 @@ class SkillRegistry:
                 s for s in skills 
                 if s.agent_scope is None or agent_name in s.agent_scope
             ]
+        if not include_unimplemented:
+            skills = [s for s in skills if s.implemented]
         
         return skills
     

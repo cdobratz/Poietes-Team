@@ -92,6 +92,7 @@ git:
 # ─── Workspace ───────────────────────────────────────────────────────────────
 workspace:
   type: local                       # local | docker
+  root: ""                          # required for `fs` commands. Agent/Telegram filesystem tasks stay inside the project path, and that path must sit inside this directory when it is set.
   sandbox_writes: true              # require approval before file writes
   approval_required: true
 

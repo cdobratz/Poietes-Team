@@ -4,7 +4,7 @@
 
 A modular, hierarchical AI agent system for autonomous software development, monitoring, security auditing, and content generation — built on OpenHands SDK.
 
-**Deploy autonomous coding workflows with intelligent memory management, extensible skills system, and arbitrary directory scanning.**
+**Deploy autonomous coding workflows with intelligent memory management, extensible skills system, and workspace-scoped directory scanning.**
 
 ## Table of Contents
 
@@ -71,9 +71,9 @@ SupervisorAgent (orchestrator)
 
 ## Key Features
 
-### 1. FilesystemAgent: Arbitrary Directory Scanning
+### 1. FilesystemAgent: Workspace Directory Scanning
 
-Scan and analyze any local directory without pre-configuration.
+`fs` commands and filesystem tasks stay inside `workspace.root`. Paths that leave it are rejected. Set `workspace.root` before using `fs`; a supervisor or Telegram filesystem task is limited to the project path, and that path must sit inside `workspace.root` when it is set.
 
 **Capabilities:**
 - `scan_directory(path, pattern)` — Recursive directory scan with glob patterns
@@ -204,8 +204,8 @@ docker-compose -f docker/mcp-compose.yml up -d
 # Scan all configured projects
 python main.py run --task "scan all projects for issues"
 
-# Scan arbitrary directory
-python main.py fs scan /path/to/any/project
+# Scan a directory inside workspace.root
+python main.py fs scan .
 
 # List available skills
 python main.py skills list
@@ -231,7 +231,8 @@ llm:
 
 workspace:
   type: local
-  approval_required: true
+  root: "/workspace"            # fs commands cannot leave this directory
+  approval_required: true       # skipped writes report awaiting_approval, not success
 
 messaging:
   telegram:
@@ -260,7 +261,7 @@ projects:
       content: true
 ```
 
-FilesystemAgent can scan a path passed at runtime. It does not need that path to be listed in `projects.yaml`.
+Filesystem commands and tasks do not need the target listed in `projects.yaml`, but the path must stay inside `workspace.root`.
 
 ## Usage
 
@@ -270,19 +271,19 @@ FilesystemAgent can scan a path passed at runtime. It does not need that path to
 # Run a task with natural language
 python main.py run --task "find all TODO comments in my project"
 
-# Scan an arbitrary directory
-python main.py fs scan /path/to/project
-python main.py fs scan /path/to/project --pattern "*.py"
+# Paths below are inside workspace.root
+python main.py fs scan .
+python main.py fs scan . --pattern "*.py"
 
 # Search for content
-python main.py fs search /path "TODO"
-python main.py fs search /path "import os"
+python main.py fs search . "TODO"
+python main.py fs search . "import os"
 
 # Show directory tree
-python main.py fs tree /path --depth 3
+python main.py fs tree . --depth 3
 
 # Find large files
-python main.py fs large /path --min-lines 500
+python main.py fs large . --min-lines 500
 
 # List available skills
 python main.py skills list
@@ -331,7 +332,7 @@ An LLM call then summarizes that report. There is no scheduled scanner in this r
 
 ### CoderAgent
 
-Given a task string, the coder asks the LLM for a plan and file operations (`replace`, `insert`, `delete`, `create`). Serena context is included only when the Serena MCP server is enabled. Writes are skipped when `workspace.approval_required` is true.
+Given a task string, the coder asks the LLM for a plan and file operations (`replace`, `insert`, `delete`, `create`). Serena context is included only when the Serena MCP server is enabled. When `workspace.approval_required` is true, planned writes are skipped. That result is not success: `success` is false and `details["status"]` is `awaiting_approval`.
 
 ### SecurityAgent
 
@@ -344,11 +345,11 @@ Generates:
 - CHANGELOG entries
 - Docstrings
 
-`run_task` writes a README when the task mentions `readme` or is empty, a changelog when the task mentions `changelog` or is empty, and docstrings when the task mentions `docstring` or `docs`. Files are written only when `workspace.approval_required` is false.
+`run_task` writes a README when the task mentions `readme` or is empty, a changelog when the task mentions `changelog` or is empty, and docstrings when the task mentions `docstring` or `docs`. Files are written only when `workspace.approval_required` is false. When approval is required and there is something to write, the result is `success=False` with `details["status"]` `awaiting_approval`.
 
 ### FilesystemAgent
 
-`scan_directory`, `search_files`, `get_file_info`, `list_tree`, and `find_large_files` work on any local path. The CLI commands are `fs scan`, `fs search`, `fs info`, `fs tree`, and `fs large`.
+`scan_directory`, `search_files`, `get_file_info`, `list_tree`, and `find_large_files` only read inside `workspace.root`. The CLI commands are `fs scan`, `fs search`, `fs info`, `fs tree`, and `fs large`; they exit if `workspace.root` is unset. Supervisor and Telegram filesystem tasks use the project path, which must be inside `workspace.root` when that setting is set.
 
 ## Testing & Validation
 
@@ -367,17 +368,11 @@ Checks:
 ### Test FilesystemAgent
 
 ```bash
-# Scan a directory
-python main.py fs scan /home/user/projects
-
-# Search for patterns
-python main.py fs search /home/user/projects "TODO"
-
-# Get tree structure
-python main.py fs tree /home/user/projects --depth 2
-
-# Find large files
-python main.py fs large /home/user/projects --min-lines 300
+# Paths are inside workspace.root
+python main.py fs scan .
+python main.py fs search . "TODO"
+python main.py fs tree . --depth 2
+python main.py fs large . --min-lines 300
 ```
 
 ### List skills

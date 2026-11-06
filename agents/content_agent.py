@@ -4,13 +4,13 @@ updates, and inline docstrings for projects.
 """
 from __future__ import annotations
 
-import json
 import logging
-import subprocess
 from pathlib import Path
 
 from agents.base import BaseAgent, AgentResult
 from config.loader import Project, Settings
+from tools.llm_json import parse_llm_json
+from tools.run_cmd import run_cmd
 from tools.safe_paths import UnsafePathError, safe_join
 
 logger = logging.getLogger(__name__)
@@ -45,25 +45,25 @@ class ContentAgent(BaseAgent):
     # ── Git helpers ───────────────────────────────────────────────────────
 
     def _git_log(self, path: str, count: int = 20) -> str:
-        try:
-            r = subprocess.run(
-                ["git", "log", f"-{count}", "--oneline", "--no-decorate"],
-                cwd=path, capture_output=True, text=True, timeout=10,
-            )
-            return r.stdout.strip() if r.returncode == 0 else ""
-        except Exception:
+        result = run_cmd(
+            ["git", "log", f"-{count}", "--oneline", "--no-decorate"],
+            cwd=path,
+            timeout=10,
+        )
+        if result.error or result.returncode != 0:
             return ""
+        return result.stdout.strip()
 
     def _git_diff(self, path: str) -> str:
         """Get diff of recent changes for changelog generation."""
-        try:
-            r = subprocess.run(
-                ["git", "diff", "HEAD~5..HEAD", "--stat"],
-                cwd=path, capture_output=True, text=True, timeout=15,
-            )
-            return r.stdout.strip()[:3000] if r.returncode == 0 else ""
-        except Exception:
+        result = run_cmd(
+            ["git", "diff", "HEAD~5..HEAD", "--stat"],
+            cwd=path,
+            timeout=15,
+        )
+        if result.error or result.returncode != 0:
             return ""
+        return result.stdout.strip()[:3000]
 
     def _read_existing_readme(self, path: str) -> str:
         for name in ("README.md", "readme.md", "README.rst"):
@@ -183,14 +183,30 @@ class ContentAgent(BaseAgent):
             details["docstrings"] = doc_results
             artifacts.extend([d["file"] for d in doc_results])
 
-        # Write files if not in approval-required mode
-        written = []
-        if not self.settings.workspace.approval_required:
-            written = self._write_content_files(project, details)
+        # A notification plus a skipped write is not a successful content task.
+        if self.settings.workspace.approval_required and artifacts:
+            self.notify(
+                "⚠️ Approval required — "
+                f"{len(artifacts)} artifact(s) for {project.name} not written."
+            )
+            summary = f"Generated {len(artifacts)} artifact(s). Awaiting approval."
+            details["status"] = "awaiting_approval"
+            details["skipped_for_approval"] = True
+            self.notify(f"⏸ Content awaiting approval: {project.name} — {summary}")
+            return self._make_result(
+                project=project,
+                task="content",
+                success=False,
+                summary=summary,
+                details=details,
+                artifacts=artifacts,
+            )
 
-        summary = f"Generated {len(artifacts)} artifact(s)." + (
-            f" {len(written)} written to disk." if written else " (approval pending)"
-        )
+        written = self._write_content_files(project, details)
+        summary = f"Generated {len(artifacts)} artifact(s). {len(written)} written to disk."
+        details["status"] = "ok"
+        details["skipped_for_approval"] = False
+        details["written"] = written
 
         self.notify(f"✅ Content done: {project.name} — {summary}")
 
@@ -204,11 +220,10 @@ class ContentAgent(BaseAgent):
         )
 
     def _parse_content_response(self, raw: str, fallback_filename: str) -> dict:
-        try:
-            clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            return json.loads(clean)
-        except (json.JSONDecodeError, AttributeError):
+        parsed = parse_llm_json(raw)
+        if parsed is None:
             return {"filename": fallback_filename, "content": raw, "raw": True}
+        return parsed
 
     def _write_content_files(self, project: Project, details: dict) -> list[str]:
         written = []

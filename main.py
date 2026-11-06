@@ -29,11 +29,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from config.loader import load_settings, load_projects
 from memory.mem0_client import build_memory_client
+from memory.smart_memory import SmartMemory
 from messaging.messenger import build_messenger
 from agents.supervisor_agent import SupervisorAgent
 from agents.filesystem_agent import FilesystemAgent
 from templates.loader import list_templates, load_template
 from tools.git_tools import GitManager
+from tools.safe_paths import UnsafePathError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,7 +53,8 @@ console = Console()
 def _build_supervisor(on_command=None) -> tuple[SupervisorAgent, any]:
     settings = load_settings()
     registry = load_projects()
-    memory = build_memory_client(settings)
+    # Same SmartMemory type the `memory` CLI builds, wrapped around the configured store.
+    memory = SmartMemory(backend=build_memory_client(settings))
     messenger = build_messenger(settings.messaging, on_command=on_command)
     supervisor = SupervisorAgent(settings, registry, memory=memory, messenger=messenger)
     return supervisor, registry
@@ -211,20 +214,41 @@ def list_templates_cmd():
 
 # ─── Filesystem Commands ───────────────────────────────────────────────────────
 
-fs_app = typer.Typer(help="Filesystem operations (scan, search, tree, large files).")
+fs_app = typer.Typer(
+    help="Filesystem operations inside workspace.root (scan, search, tree, large files)."
+)
+
+
+def _filesystem_agent() -> FilesystemAgent:
+    """CLI filesystem commands have no project, so workspace.root is required."""
+    settings = load_settings()
+    agent = FilesystemAgent(settings)
+    try:
+        agent.effective_root(None)
+    except UnsafePathError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+    return agent
+
+
+def _guard_fs(action):
+    try:
+        return action()
+    except UnsafePathError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
 
 
 @fs_app.command("scan")
 def fs_scan(
-    path: str = typer.Argument(..., help="Directory path to scan"),
+    path: str = typer.Argument(..., help="Directory path to scan, inside workspace.root"),
     pattern: str = typer.Option(None, "--pattern", "-p", help="Glob pattern (e.g., *.py)"),
 ):
-    """Scan a directory recursively."""
-    settings = load_settings()
-    fs_agent = FilesystemAgent(settings)
-    
+    """Scan a directory recursively inside the configured workspace."""
+    fs_agent = _filesystem_agent()
+
     console.print(f"[cyan]Scanning:[/cyan] {path}")
-    result = fs_agent.scan_directory(path, pattern)
+    result = _guard_fs(lambda: fs_agent.scan_directory(path, pattern))
     
     console.print(f"[green]✅[/green] {result.total_files} files, {result.total_dirs} directories")
     console.print(f"[green]📊[/green] Total size: {result.total_size / 1024:.1f} KB")
@@ -244,12 +268,11 @@ def fs_search(
     query: str = typer.Argument(..., help="Search pattern (regex)"),
     file_pattern: str = typer.Option(None, "--pattern", "-p", help="File pattern (e.g., *.py)"),
 ):
-    """Search for text in files."""
-    settings = load_settings()
-    fs_agent = FilesystemAgent(settings)
-    
+    """Search for text in files inside the configured workspace."""
+    fs_agent = _filesystem_agent()
+
     console.print(f"[cyan]Searching:[/cyan] {path} for '{query}'")
-    result = fs_agent.search_files(path, query, file_pattern)
+    result = _guard_fs(lambda: fs_agent.search_files(path, query, file_pattern))
     
     console.print(f"[green]✅[/green] {result.total_matches} matches in {result.files_matched} files")
     
@@ -264,13 +287,12 @@ def fs_tree(
     path: str = typer.Argument(..., help="Directory path"),
     depth: int = typer.Option(3, "--depth", "-d", help="Maximum depth"),
 ):
-    """Show directory tree structure."""
+    """Show directory tree structure inside the configured workspace."""
     import json
-    settings = load_settings()
-    fs_agent = FilesystemAgent(settings)
-    
+    fs_agent = _filesystem_agent()
+
     console.print(f"[cyan]Tree:[/cyan] {path}")
-    tree = fs_agent.list_tree(path, depth)
+    tree = _guard_fs(lambda: fs_agent.list_tree(path, depth))
     
     console.print(json.dumps(tree, indent=2))
 
@@ -280,12 +302,11 @@ def fs_large(
     path: str = typer.Argument(..., help="Directory path"),
     min_lines: int = typer.Option(500, "--min-lines", "-n", help="Minimum line count"),
 ):
-    """Find large files."""
-    settings = load_settings()
-    fs_agent = FilesystemAgent(settings)
-    
+    """Find large files inside the configured workspace."""
+    fs_agent = _filesystem_agent()
+
     console.print(f"[cyan]Finding large files in:[/cyan] {path}")
-    large_files = fs_agent.find_large_files(path, min_lines=min_lines)
+    large_files = _guard_fs(lambda: fs_agent.find_large_files(path, min_lines=min_lines))
     
     console.print(f"[green]✅[/green] Found {len(large_files)} large files")
     
@@ -297,11 +318,10 @@ def fs_large(
 def fs_info(
     path: str = typer.Argument(..., help="File or directory path"),
 ):
-    """Get file/directory info."""
-    settings = load_settings()
-    fs_agent = FilesystemAgent(settings)
-    
-    info = fs_agent.get_file_info(path)
+    """Get file/directory info inside the configured workspace."""
+    fs_agent = _filesystem_agent()
+
+    info = _guard_fs(lambda: fs_agent.get_file_info(path))
     
     if info:
         console.print(f"[bold]Path:[/bold] {info.path}")
@@ -335,8 +355,9 @@ def skills_list():
     registry = init_skill_registry(str(skills_dir))
     
     skills = registry.list_all()
-    
-    if not skills:
+    gated = [s for s in registry.list_all(include_unimplemented=True) if not s.implemented]
+
+    if not skills and not gated:
         console.print("[yellow]No skills found.[/yellow]")
         raise typer.Exit(0)
     
@@ -352,7 +373,13 @@ def skills_list():
             ", ".join(skill.triggers[:5]),
         )
     
-    console.print(table)
+    if skills:
+        console.print(table)
+    if gated:
+        names = ", ".join(s.name for s in gated)
+        console.print(
+            f"[yellow]Gated (not implemented, hidden from agents): {names}[/yellow]"
+        )
 
 
 app.add_typer(skills_app, name="skills")
@@ -365,10 +392,10 @@ memory_app = typer.Typer(help="Memory management commands.")
 
 @memory_app.command("stats")
 def memory_stats(project_id: str = typer.Option("", "--project", "-p", help="Project ID")):
-    """Show memory statistics."""
-    from memory.smart_memory import create_smart_memory
-    
-    sm = create_smart_memory()
+    """Show memory statistics for the configured memory backend."""
+    from memory.smart_memory import build_smart_memory
+
+    sm = build_smart_memory(load_settings())
     stats = sm.get_stats(project_id=project_id if project_id else "")
     
     console.print("[bold]Memory Statistics[/bold]")
@@ -384,10 +411,10 @@ def memory_stats(project_id: str = typer.Option("", "--project", "-p", help="Pro
 
 @memory_app.command("cleanup")
 def memory_cleanup():
-    """Clean up low-value memories."""
-    from memory.smart_memory import create_smart_memory
-    
-    sm = create_smart_memory()
+    """Clean up low-value memories on the configured memory backend."""
+    from memory.smart_memory import build_smart_memory
+
+    sm = build_smart_memory(load_settings())
     cleaned = sm.cleanup_low_value()
     summarized = sm.summarize_old_memories()
     

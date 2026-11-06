@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
-from pathlib import Path
 
 from agents.base import BaseAgent, AgentResult
 from config.loader import Project, Settings
+from tools.llm_json import parse_llm_json
+from tools.run_cmd import run_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -48,15 +48,14 @@ class SecurityAgent(BaseAgent):
         self._cfg = settings.security
 
     def _run(self, cmd: list[str], cwd: str) -> tuple[int, str]:
-        try:
-            r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=180)
-            return r.returncode, r.stdout + r.stderr
-        except subprocess.TimeoutExpired:
+        result = run_cmd(cmd, cwd, timeout=180)
+        if result.error == "timeout":
             return 1, "TIMEOUT"
-        except FileNotFoundError:
+        if result.error == "not_found":
             return 127, f"not found: {cmd[0]}"
-        except Exception as e:
-            return 1, str(e)
+        if result.error:
+            return 1, result.error_detail
+        return result.returncode, result.stdout + result.stderr
 
     # ── Tool runners ──────────────────────────────────────────────────────
 
@@ -180,11 +179,7 @@ class SecurityAgent(BaseAgent):
 
         raw = self._call_llm(messages, system=SECURITY_SYSTEM_PROMPT)
 
-        try:
-            clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            report = json.loads(clean)
-        except (json.JSONDecodeError, AttributeError):
-            report = {"raw": raw, "risk_level": "unknown"}
+        report = parse_llm_json(raw) or {"raw": raw, "risk_level": "unknown"}
 
         risk = report.get("risk_level", "unknown")
         findings_count = len(report.get("findings", []))

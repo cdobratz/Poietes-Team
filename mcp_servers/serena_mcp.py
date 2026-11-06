@@ -110,27 +110,55 @@ class LocalSerenaShim:
             return []
 
     def apply_edit(self, operation: dict, project_path: str) -> dict:
-        """Apply a code edit operation."""
+        """Apply a create, replace, insert, or delete edit inside ``project_path``."""
         op = operation.get("op", "")
         file_rel = operation.get("file", "")
         content = operation.get("content", "")
+        search_target = operation.get("target", "")
         try:
             target = safe_join(project_path, file_rel)
         except UnsafePathError as e:
             return {"error": f"Unsafe path rejected: {e}"}
 
         if op == "create":
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content)
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content)
+            except OSError as e:
+                return {"error": f"Create failed for {file_rel}: {e}"}
             return {"success": True, "file": file_rel}
 
-        if op == "replace" and target.exists():
-            old_content = target.read_text()
-            search_target = operation.get("target", "")
-            if search_target and search_target in old_content:
-                new_content = old_content.replace(search_target, content, 1)
-                target.write_text(new_content)
-                return {"success": True, "file": file_rel}
-            return {"error": f"Target not found in {file_rel}"}
+        if op not in {"replace", "insert", "delete"}:
+            return {"error": f"Unsupported op: {op}"}
 
-        return {"error": f"Unsupported op: {op}"}
+        if not target.is_file():
+            return {"error": f"File not found: {file_rel}"}
+
+        try:
+            old_content = target.read_text()
+        except (OSError, UnicodeDecodeError) as e:
+            return {"error": f"Cannot read {file_rel}: {e}"}
+
+        if op == "replace":
+            if not search_target or search_target not in old_content:
+                return {"error": f"Target not found in {file_rel}"}
+            new_content = old_content.replace(search_target, content, 1)
+        elif op == "insert":
+            if search_target:
+                if search_target not in old_content:
+                    return {"error": f"Target not found in {file_rel}"}
+                idx = old_content.find(search_target) + len(search_target)
+                new_content = old_content[:idx] + content + old_content[idx:]
+            else:
+                new_content = old_content + content
+        else:
+            needle = search_target or content
+            if not needle or needle not in old_content:
+                return {"error": f"Delete target not found in {file_rel}"}
+            new_content = old_content.replace(needle, "", 1)
+
+        try:
+            target.write_text(new_content)
+        except OSError as e:
+            return {"error": f"Write failed for {file_rel}: {e}"}
+        return {"success": True, "file": file_rel}

@@ -1,5 +1,4 @@
 # Core
-openhands-ai>=0.1.0
 litellm>=1.40.0
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
@@ -20,8 +19,7 @@ bandit>=1.7.0
 semgrep>=1.50.0
 safety>=3.0.0
 
-# Browser / MCP
-playwright>=1.40.0
+# MCP client libraries (optional servers are configured by URL, not imported here)
 mcp>=1.0.0
 
 # Utilities

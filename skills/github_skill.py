@@ -76,15 +76,26 @@ def create_issue(
     return not_implemented("GitHub create_issue")
 
 
+def _stub_action(feature: str):
+    def _run(**_kwargs: Any) -> dict[str, Any]:
+        return not_implemented(feature)
+    return _run
+
+
 # Skill definition
 skill = Skill(
     name="github",
-    description="[STUB, not implemented] GitHub operations including PRs, issues, and repository management",
+    description=(
+        "[STUB, not implemented] GitHub operations including PRs, issues, "
+        "and repository management"
+    ),
     triggers=[
         "github", "pr", "pull request", "issue", 
         "repo", "commit", "branch", "merge"
     ],
+    action=_stub_action("GitHub skill"),
     agent_scope=None,  # Available to all agents
+    implemented=False,
 )
 
 # Export skill for registry

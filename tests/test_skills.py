@@ -29,3 +29,24 @@ def test_stubs_return_not_implemented(call):
 
 def test_real_debug_helpers_still_work():
     assert debug.analyze_error("ConnectionError: timeout")["success"] is True
+
+
+def test_stub_skills_are_gated_in_the_registry():
+    from pathlib import Path
+
+    from skills.base import init_skill_registry
+
+    registry = init_skill_registry(str(Path(__file__).resolve().parent.parent / "skills"))
+    visible = {s.name for s in registry.list_all()}
+    assert "debug" in visible
+    assert "github" not in visible
+    assert "gitlab" not in visible
+    assert "deploy" not in visible
+    assert registry.find_by_trigger("please deploy this") == []
+
+    gated = {s.name for s in registry.list_all(include_unimplemented=True)}
+    assert {"github", "gitlab", "deploy"} <= gated
+    github = registry.get("github")
+    assert github is not None
+    result = github.execute()
+    assert result["success"] is False and result["not_implemented"] is True

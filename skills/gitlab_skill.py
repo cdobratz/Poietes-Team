@@ -51,12 +51,20 @@ def list_mrs(project_id: str, state: str = "opened") -> dict[str, Any]:
     return not_implemented("GitLab list_mrs")
 
 
+def _stub_action(feature: str):
+    def _run(**_kwargs: Any) -> dict[str, Any]:
+        return not_implemented(feature)
+    return _run
+
+
 # Skill definition
 skill = Skill(
     name="gitlab",
     description="[STUB, not implemented] GitLab operations including merge requests and projects",
     triggers=["gitlab", "merge request", "mr"],
+    action=_stub_action("GitLab skill"),
     agent_scope=None,
+    implemented=False,
 )
 
 __all__ = ["skill", "create_mr", "list_mrs"]

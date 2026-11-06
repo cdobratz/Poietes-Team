@@ -18,6 +18,7 @@ from agents.content_agent import ContentAgent
 from agents.filesystem_agent import FilesystemAgent
 from config.loader import Project, ProjectRegistry, Settings
 from templates.loader import TaskTemplate
+from tools.llm_json import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -94,19 +95,18 @@ class SupervisorAgent(BaseAgent):
             ),
         }]
         raw = self._call_llm(messages, system=SUPERVISOR_SYSTEM_PROMPT)
-        try:
-            clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            return json.loads(clean)
-        except (json.JSONDecodeError, AttributeError):
-            # Fallback: run monitor on all projects
-            return {
-                "plan": [
-                    {"project_id": p.id, "agents": ["monitor"], "task": task, "priority": 1}
-                    for p in projects
-                ],
-                "parallel": True,
-                "summary": "Fallback: monitor scan only",
-            }
+        parsed = parse_llm_json(raw)
+        if parsed is not None:
+            return parsed
+        # Fallback: run monitor on all projects
+        return {
+            "plan": [
+                {"project_id": p.id, "agents": ["monitor"], "task": task, "priority": 1}
+                for p in projects
+            ],
+            "parallel": True,
+            "summary": "Fallback: monitor scan only",
+        }
 
     # ── Execution ─────────────────────────────────────────────────────────
 

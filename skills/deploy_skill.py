@@ -75,12 +75,22 @@ def rollback(deployment_name: str, revision: str = "previous") -> dict[str, Any]
     return not_implemented("rollback")
 
 
+def _stub_action(feature: str):
+    def _run(**_kwargs: Any) -> dict[str, Any]:
+        return not_implemented(feature)
+    return _run
+
+
 # Skill definition
 skill = Skill(
     name="deploy",
-    description="[STUB, not implemented] Deployment operations: Docker, Kubernetes, builds, rollbacks",
+    description=(
+        "[STUB, not implemented] Deployment operations: Docker, Kubernetes, builds, rollbacks"
+    ),
     triggers=["deploy", "release", "build", "docker", "k8s", "kubernetes", "rollback"],
+    action=_stub_action("deploy skill"),
     agent_scope=None,
+    implemented=False,
 )
 
 __all__ = ["skill", "deploy_docker", "deploy_k8s", "build_image", "rollback"]
