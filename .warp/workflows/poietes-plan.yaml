@@ -1,0 +1,29 @@
+---
+name: Poietes plan (no execution)
+command: |-
+  export POIETES_CONFIG_DIR={{config_dir}}
+  python main.py validate && python main.py list-projects && python main.py run --dry-run --task {{task}} --projects {{project_id}}
+tags:
+  - poietes
+description: >
+  Saved terminal workflow. Warp loads this file and does not run it until you
+  select it. From the repository root, with the isolated virtualenv active, it
+  checks config, lists projects, and prints a dry-run JSON plan. It does not
+  call an LLM, send messages, edit files, or start the real run. Approving a
+  real run is a separate workflow, "Poietes run (explicit approval)", which
+  this command does not invoke.
+arguments:
+  - name: config_dir
+    description: >
+      Directory that contains the isolated settings.yaml and projects.yaml.
+      The default is the trial fixture, not config/settings.yaml.
+    default_value: config/warp-trial
+  - name: project_id
+    description: >
+      Enabled project id from list-projects. The trial fixture id is warp-fixture.
+      There is no default; you choose the project.
+  - name: task
+    description: Text passed to run --task. The dry-run records it and does not execute it.
+shells:
+  - bash
+  - zsh

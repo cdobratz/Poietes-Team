@@ -1,0 +1,28 @@
+---
+name: Poietes run (explicit approval)
+command: |-
+  export POIETES_CONFIG_DIR={{config_dir}}
+  python main.py run --json --task {{task}} --projects {{project_id}}
+tags:
+  - poietes
+description: >
+  Real Poietes run. Select this workflow yourself only after you have read a
+  dry-run plan and you mean to execute. Importing workflows does not run this
+  file, and the plan workflow does not call it. The command can call a
+  configured LLM. The trial fixture leaves Telegram and remote memory off.
+  Do not point config_dir at a config you have not reviewed. A live run was
+  not part of the automated tests and needs a separate go-ahead.
+arguments:
+  - name: config_dir
+    description: >
+      Directory that contains settings.yaml and projects.yaml. The default is
+      the isolated trial fixture, not config/settings.yaml.
+    default_value: config/warp-trial
+  - name: project_id
+    description: >
+      Enabled project id. The trial fixture id is warp-fixture. There is no default.
+  - name: task
+    description: Task text passed to run --task. This workflow executes it.
+shells:
+  - bash
+  - zsh

@@ -35,6 +35,7 @@ from agents.supervisor_agent import SupervisorAgent
 from agents.filesystem_agent import FilesystemAgent
 from templates.loader import list_templates, load_template
 from tools.git_tools import GitManager
+from tools.offline_plan import cancelled_payload, results_payload, run_dry_run
 from tools.safe_paths import UnsafePathError
 
 logging.basicConfig(
@@ -73,28 +74,55 @@ def run(
         None, "--output", "-o",
         help="Save results JSON to file"
     ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Plan only, no writes"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Print a read-only JSON plan and exit. Does not call an LLM or write files.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json",
+        help="Print one JSON document on stdout and skip the text report for this process.",
+    ),
 ):
     """Run a task across one or more projects."""
-    supervisor, registry = _build_supervisor()
-
     if dry_run:
-        supervisor.settings.workspace.approval_required = True
+        code, payload = run_dry_run(
+            task=task,
+            project_ids=projects,
+            output=output,
+            load_settings=load_settings,
+            load_projects=load_projects,
+        )
+        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+        raise typer.Exit(code)
 
-    target_projects = None
-    if projects:
-        ids = [p.strip() for p in projects.split(",")]
-        target_projects = [p for p in registry.enabled() if p.id in ids]
-        if not target_projects:
-            console.print(f"[red]No matching projects found for: {projects}[/red]")
-            raise typer.Exit(1)
+    try:
+        supervisor, registry = _build_supervisor()
 
-    results = supervisor.run(task, projects=target_projects)
+        target_projects = None
+        if projects:
+            ids = [p.strip() for p in projects.split(",")]
+            target_projects = [p for p in registry.enabled() if p.id in ids]
+            if not target_projects:
+                console.print(f"[red]No matching projects found for: {projects}[/red]")
+                raise typer.Exit(1)
+
+        results = supervisor.run(task, projects=target_projects, quiet=json_output)
+    except KeyboardInterrupt:
+        if json_output:
+            sys.stdout.write(json.dumps(cancelled_payload(dry_run=False, task=task), indent=2) + "\n")
+        else:
+            console.print("[yellow]Cancelled. No further workers will be started.[/yellow]")
+        raise typer.Exit(130)
 
     if output:
         data = [r.to_dict() for r in results]
         Path(output).write_text(json.dumps(data, indent=2))
         console.print(f"[green]Results saved to {output}[/green]")
+
+    if json_output:
+        code, payload = results_payload([r.to_dict() for r in results], task=task)
+        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+        raise typer.Exit(code)
 
     success = all(r.success for r in results)
     raise typer.Exit(0 if success else 1)

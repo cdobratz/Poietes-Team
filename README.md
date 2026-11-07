@@ -16,6 +16,7 @@ A modular, hierarchical AI agent system for autonomous software development, mon
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [Usage](#usage)
+- [Warp terminal workflow](#warp-terminal-workflow)
 - [Features Guide](#features-guide)
 - [Testing & Validation](#testing--validation)
 - [Project Structure](#project-structure)
@@ -317,6 +318,72 @@ results = supervisor.run("scan configured projects for security issues")
 for result in results:
     print(result)
 ```
+
+## Warp terminal workflow
+
+This is a saved terminal workflow for running the Poietes CLI inside [Warp](https://docs.warp.dev/agents/cli-agents/overview/). It is not Warp agent management. Poietes is not one of the third-party CLI agents Warp detects, so it does not get the agent toolbelt, agent notifications, or a row in the Conversation Panel or Agent Management Panel. Sessions stay in the terminal pane where you ran the command. This change does not add an Agent Client Protocol (ACP) bridge.
+
+Warp loads `.warp/workflows/*.yaml` when you open the repo and does not run those files until you select one. The plan workflow validates config, lists projects, and runs `python main.py run --dry-run`. It does not call the separate run workflow. Selecting the run workflow is the approval. There is no automatic yes.
+
+`run --dry-run` prints one JSON plan and exits. It reads `settings.yaml` and `projects.yaml` only. It does not call an LLM, memory, messaging, or a subprocess, and it does not write files. `--output` with `--dry-run` is rejected (exit 2) because that flag would write a file. Unknown or disabled projects exit 1. A project with no monitor, coder, security, or content task exits 2. Cancellation exits 130. A real `run` still obeys `workspace.approval_required` and the filesystem sandbox; the dry-run does not enter that code.
+
+### Working directory and isolated env
+
+The current directory must be the repository root, the folder that contains `main.py` and `config/warp-trial`. Warp runs a workflow in the terminal's current directory. It has no cwd field.
+
+```bash
+cd /absolute/path/to/Poietes-Team
+python3 -m venv .venv-warp
+. .venv-warp/bin/activate
+python -m pip install \
+  "pydantic>=2.0.0" \
+  "pydantic-settings>=2.0.0" \
+  "pyyaml>=6.0" \
+  "httpx>=0.26.0" \
+  "tenacity>=8.2.0" \
+  "typer>=0.9.0" \
+  "rich>=13.0.0" \
+  "python-dotenv>=1.0.0"
+```
+
+`.venv-warp/` is gitignored. This set is enough for `validate` and `run --dry-run`. It does not install an LLM client. Use another directory name if you already depend on `.venv`.
+
+The trial config is `config/warp-trial`. Telegram is disabled and Mem0 is disabled there. Pointing `POIETES_CONFIG_DIR` at that directory does not edit `config/settings.yaml` or `config/projects.yaml`. If the variable is unset, the CLI uses `config/` as before. If the variable is set and `settings.yaml` is missing in that directory, loading fails instead of falling back.
+
+Saved workflows (bash and zsh), from the [YAML workflow format](https://docs.warp.dev/terminal/entry/yaml-workflows/):
+
+- `.warp/workflows/poietes-plan.yaml` arguments: `config_dir` (default `config/warp-trial`), `project_id` (required; fixture id `warp-fixture`), `task` (required).
+- `.warp/workflows/poietes-run.yaml` is the real `python main.py run --json --task ... --projects ...`. Do not select it unless you intend to execute.
+
+### Limits
+
+- The plan lists the enabled agents for the project you named. It does not ask a model which agents should run.
+- Filesystem scans are not part of the dry-run plan.
+- A live `run` can call a configured LLM and is outside this trial.
+- Ctrl-C during a parallel run stops waiting. Worker threads are daemons, so they do not keep the process alive after the command exits. Work already inside one agent is not killed mid-call.
+
+### Troubleshooting
+
+- `python` is not found, or import errors: the venv from this section is not active, or the current directory is not the repo root.
+- Exit 1 and `unknown project`: `project_id` is not an enabled id in the selected config. The fixture id is `warp-fixture`.
+- Exit 2: empty `--task`, `--output` combined with `--dry-run`, or the project has no planable tasks.
+- Exit 130: cancelled. JSON status is `cancelled` and `execution` is `none`.
+- `POIETES_CONFIG_DIR` error saying the default config was not used: that directory has no `settings.yaml` or `projects.yaml`.
+- No Warp toolbelt or notification: expected. This CLI is not a Warp-managed agent.
+
+### Manual acceptance
+
+Owner: Cassidy. Automated tests did not perform a live or paid run. No tracker row was supplied for this slice.
+
+From the repo root, with the env above active:
+
+```bash
+export POIETES_CONFIG_DIR="$PWD/config/warp-trial"
+python main.py validate
+python main.py run --dry-run --task "list configured agents" --projects warp-fixture
+```
+
+A real `python main.py run` without `--dry-run` needs a separate authorization.
 
 ## Features Guide
 

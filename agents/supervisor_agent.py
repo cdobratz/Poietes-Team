@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from typing import Callable
 
 from agents.base import AgentResult, BaseAgent
@@ -142,27 +142,55 @@ class SupervisorAgent(BaseAgent):
         all_results: list[AgentResult] = []
 
         if parallel and len(steps) > 1:
-            with ThreadPoolExecutor(max_workers=4) as pool:
-                futures = {
-                    pool.submit(
-                        self._execute_step, step, project_map[step["project_id"]]
-                    ): step
-                    for step in steps
-                    if step["project_id"] in project_map
-                }
-                for future in as_completed(futures):
-                    try:
-                        all_results.extend(future.result())
-                    except Exception as e:
-                        logger.exception(f"Parallel step failed: {e}")
-        else:
-            for step in steps:
-                project = project_map.get(step.get("project_id", ""))
-                if not project:
-                    continue
-                all_results.extend(self._execute_step(step, project))
+            return self._execute_parallel(steps, project_map)
+
+        for step in steps:
+            project = project_map.get(step.get("project_id", ""))
+            if not project:
+                continue
+            all_results.extend(self._execute_step(step, project))
 
         return all_results
+
+    def _execute_parallel(self, steps: list[dict], project_map: dict[str, Project]) -> list[AgentResult]:
+        """Run plan steps on daemon threads.
+
+        On KeyboardInterrupt the method stops joining and does not start more
+        work. The threads are daemons, so they do not keep the process alive
+        after the caller exits.
+        """
+        results: list[AgentResult] = []
+        lock = threading.Lock()
+        threads: list[threading.Thread] = []
+
+        def _one(step: dict) -> None:
+            project = project_map[step["project_id"]]
+            try:
+                batch = self._execute_step(step, project)
+            except Exception as exc:
+                logger.exception(f"Parallel step failed: {exc}")
+                return
+            with lock:
+                results.extend(batch)
+
+        for step in steps:
+            if step.get("project_id", "") not in project_map:
+                continue
+            thread = threading.Thread(
+                target=_one,
+                args=(step,),
+                name="poietes-agent",
+                daemon=True,
+            )
+            threads.append(thread)
+            thread.start()
+        try:
+            for thread in threads:
+                while thread.is_alive():
+                    thread.join(timeout=0.2)
+        except KeyboardInterrupt:
+            raise
+        return results
 
     # ── Reporting ─────────────────────────────────────────────────────────
 
@@ -266,20 +294,26 @@ class SupervisorAgent(BaseAgent):
         task: str,
         projects: list[Project] | None = None,
         on_result: Callable[[AgentResult], None] | None = None,
+        quiet: bool = False,
     ) -> list[AgentResult]:
         """
         Main entry point.
         Builds a plan, executes it, and returns all AgentResults.
+
+        ``quiet`` skips the text report and messenger lines so a caller can
+        print one JSON document. It does not change saved configuration.
         """
         if projects is None:
             projects = self.registry.enabled()
 
         if not projects:
             logger.warning("No enabled projects found")
-            self.notify("⚠️ No enabled projects to work on.")
+            if not quiet:
+                self.notify("⚠️ No enabled projects to work on.")
             return []
 
-        self.notify(f"🚀 Supervisor starting: '{task}' on {len(projects)} project(s)")
+        if not quiet:
+            self.notify(f"🚀 Supervisor starting: '{task}' on {len(projects)} project(s)")
 
         plan = self._build_plan(task, projects)
         logger.info(f"Plan: {json.dumps(plan, indent=2)}")
@@ -291,8 +325,9 @@ class SupervisorAgent(BaseAgent):
                 on_result(r)
 
         report = self._build_report(results, plan.get("summary", ""))
-        print(report)
-        self.notify(f"📊 Run complete:\n{report}")
+        if not quiet:
+            print(report)
+            self.notify(f"📊 Run complete:\n{report}")
 
         # Save run summary to memory
         self.remember(

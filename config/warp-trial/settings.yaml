@@ -1,0 +1,75 @@
+# Isolated config for a Warp terminal trial.
+# Used only when POIETES_CONFIG_DIR points at this directory.
+# It does not replace config/settings.yaml. Telegram and remote memory are off.
+# No API keys. validate and run --dry-run do not contact the base_url below.
+
+llm:
+  default: local
+  backends:
+    local:
+      provider: ollama
+      model: llama3.2
+      api_key: ""
+      base_url: "http://127.0.0.1:11434"
+
+agents:
+  supervisor:
+    llm: local
+    max_iterations: 1
+  monitor:
+    llm: local
+    max_iterations: 1
+  coder:
+    llm: local
+    max_iterations: 1
+  security:
+    llm: local
+    max_iterations: 1
+  content:
+    llm: local
+    max_iterations: 1
+
+mcp:
+  serena:
+    url: "http://127.0.0.1:9/mcp"
+    enabled: false
+  mem0:
+    url: "http://127.0.0.1:9/mcp"
+    enabled: false
+    api_key: ""
+  playwright:
+    url: "http://127.0.0.1:9/mcp"
+    enabled: false
+
+messaging:
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
+    allowed_chat_ids: []
+    max_concurrent_runs: 1
+  cli:
+    enabled: true
+    verbose: false
+
+git:
+  github:
+    enabled: false
+    token: ""
+    default_branch: main
+    auto_pr: false
+  gitlab:
+    enabled: false
+    token: ""
+    url: "https://gitlab.com"
+
+workspace:
+  type: local
+  root: ""
+  sandbox_writes: true
+  approval_required: true
+
+security:
+  bandit: false
+  semgrep: false
+  safety: false

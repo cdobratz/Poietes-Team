@@ -214,7 +214,28 @@ class ProjectRegistry(_StrictModel):
 
 # ─── Public loaders ───────────────────────────────────────────────────────────
 
+def _config_override() -> Path | None:
+    """POIETES_CONFIG_DIR, when set, replaces config/ for this process only."""
+    raw = os.environ.get("POIETES_CONFIG_DIR", "").strip()
+    if not raw:
+        return None
+    return Path(raw)
+
+
+def _load_isolated(directory: Path, filename: str) -> dict:
+    path = directory / filename
+    if not path.is_file():
+        raise ConfigError(
+            f"POIETES_CONFIG_DIR is {directory} but {filename} is missing there. "
+            "The default config/ directory was not used."
+        )
+    return _load_yaml(path, strict=True)
+
+
 def load_settings(path: Path | None = None) -> Settings:
+    override = None if path else _config_override()
+    if override is not None:
+        return Settings.model_validate(_load_isolated(override, "settings.yaml"))
     p = path or (CONFIG_DIR / "settings.yaml")
     if not p.exists():
         example = CONFIG_DIR / "settings.example.yaml"
@@ -232,6 +253,9 @@ def load_settings(path: Path | None = None) -> Settings:
 
 
 def load_projects(path: Path | None = None) -> ProjectRegistry:
+    override = None if path else _config_override()
+    if override is not None:
+        return ProjectRegistry.model_validate(_load_isolated(override, "projects.yaml"))
     p = path or (CONFIG_DIR / "projects.yaml")
     if not p.exists():
         example = CONFIG_DIR / "projects.example.yaml"
