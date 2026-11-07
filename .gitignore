@@ -5,6 +5,7 @@ __pycache__/
 config/settings.yaml
 config/projects.yaml
 .venv/
+.venv-warp/
 .pytest_cache/
 *.egg-info/
 dist/

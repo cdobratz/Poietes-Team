@@ -1,0 +1,17 @@
+# Synthetic project for the Warp trial. path is empty so a later real run
+# cannot scan the machine until you edit a copy of this file on purpose.
+
+projects:
+  - id: warp-fixture
+    name: "Warp trial fixture"
+    path: ""
+    repo: ""
+    branch: main
+    language: python
+    enabled: true
+    tasks:
+      monitor: true
+      coder: false
+      security: false
+      content: false
+    labels: []
