@@ -1,95 +1,84 @@
 """
-mcp_servers/serena_mcp.py — Lightweight Serena MCP server shim.
+mcp_servers/serena_mcp.py: lightweight local fallback when the Serena server is not installed.
 
 In production, run the real Serena server (pip install serena).
 This shim handles local fallback when Serena is not installed,
-using basic AST analysis and grep for code search.
+using the shared project walk and Python AST. It does not start a subprocess.
 """
 from __future__ import annotations
 
 import ast
-import json
-import logging
-import re
-import subprocess
 from pathlib import Path
 
+from tools.fs_stats import read_text_lines, walk_tree
 from tools.safe_paths import UnsafePathError, safe_join
-
-logger = logging.getLogger(__name__)
 
 
 class LocalSerenaShim:
     """
     Fallback code intelligence when real Serena MCP is unavailable.
-    Uses grep + Python AST for basic semantic search.
+    Uses the shared project walk and Python AST for basic search.
     """
 
     def search_code(self, query: str, project_path: str, max_results: int = 5) -> list[dict]:
-        """Search for code matching a query string."""
-        matches = []
+        """Search for code matching a query string.
+
+        Uses the shared project walk. Ignored directories are not entered,
+        symlinks are not read, and this method does not start a subprocess.
+        """
         root = Path(project_path)
-        if not root.exists():
+        if not query or not root.is_dir():
             return []
 
-        # Use ripgrep if available, else grep
-        for cmd in [
-            ["rg", "--json", "-i", query, str(root)],
-            ["grep", "-r", "-n", "-i", "--include=*.py", query, str(root)],
-        ]:
-            try:
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-                if r.returncode == 0:
-                    lines = r.stdout.strip().splitlines()[:max_results * 3]
-                    for line in lines:
-                        try:
-                            data = json.loads(line)  # ripgrep JSON
-                            if data.get("type") == "match":
-                                m = data["data"]
-                                matches.append({
-                                    "file": m["path"]["text"].replace(project_path, ""),
-                                    "line": m["line_number"],
-                                    "content": m["lines"]["text"].strip(),
-                                    "symbol": "",
-                                })
-                        except (json.JSONDecodeError, KeyError):
-                            # grep format: file:line:content
-                            parts = line.split(":", 2)
-                            if len(parts) >= 3:
-                                matches.append({
-                                    "file": parts[0].replace(project_path, ""),
-                                    "line": parts[1],
-                                    "content": parts[2].strip(),
-                                    "symbol": "",
-                                })
-                        if len(matches) >= max_results:
-                            break
-                    break
-            except FileNotFoundError:
+        needle = query.lower()
+        matches: list[dict] = []
+        for item in walk_tree(root):
+            if not item.is_file():
                 continue
-
-        return matches[:max_results]
+            lines = read_text_lines(item)
+            if not lines:
+                continue
+            rel = str(item.relative_to(root))
+            for line_no, line in enumerate(lines, 1):
+                if needle not in line.lower():
+                    continue
+                matches.append({
+                    "file": rel,
+                    "line": line_no,
+                    "content": line.strip(),
+                    "symbol": "",
+                })
+                if len(matches) >= max_results:
+                    return matches
+        return matches
 
     def get_symbol(self, name: str, project_path: str) -> dict:
-        """Find a class or function definition."""
+        """Find a class or function definition inside the project walk."""
         root = Path(project_path)
-        for py_file in root.rglob("*.py"):
-            try:
-                source = py_file.read_text(errors="ignore")
-                tree = ast.parse(source)
-                for node in ast.walk(tree):
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                        if node.name == name:
-                            lines = source.splitlines()
-                            snippet = "\n".join(lines[node.lineno - 1:node.end_lineno])
-                            return {
-                                "name": name,
-                                "file": str(py_file.relative_to(root)),
-                                "line": node.lineno,
-                                "content": snippet,
-                            }
-            except (SyntaxError, Exception):
+        if not name or not root.is_dir():
+            return {}
+        for py_file in walk_tree(root):
+            if not py_file.is_file() or py_file.suffix != ".py":
                 continue
+            lines = read_text_lines(py_file)
+            if not lines:
+                continue
+            try:
+                tree = ast.parse("\n".join(lines))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    continue
+                if node.name != name:
+                    continue
+                end = node.end_lineno or node.lineno
+                return {
+                    "name": name,
+                    "file": str(py_file.relative_to(root)),
+                    "line": node.lineno,
+                    "content": "\n".join(lines[node.lineno - 1:end]),
+                }
         return {}
 
     def list_symbols(self, file_path: str) -> list[dict]:

@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-echo "=== OpenHands Agent Team — Setup ==="
+echo "=== Poietes Agent Team setup ==="
 
 # 1. Python version check
 python_version=$(python3 --version 2>&1 | awk '{print $2}')

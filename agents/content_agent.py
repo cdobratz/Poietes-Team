@@ -9,6 +9,7 @@ from pathlib import Path
 
 from agents.base import BaseAgent, AgentResult
 from config.loader import Project, Settings
+from tools.fs_stats import read_text_lines, walk_tree
 from tools.llm_json import parse_llm_json
 from tools.run_cmd import run_cmd
 from tools.safe_paths import UnsafePathError, safe_join
@@ -81,21 +82,22 @@ class ContentAgent(BaseAgent):
         }
         ext = ext_map.get(language, ".py")
         root = Path(path)
-        ignore = {".git", "node_modules", "__pycache__", ".venv", "dist", "build"}
+        if not root.is_dir():
+            return []
 
         files = []
-        for f in root.rglob(f"*{ext}"):
-            if any(p in f.parts for p in ignore):
+        # Same walk as monitor and filesystem scans: ignored directories are
+        # not entered, and symlinks are not followed or read.
+        for f in walk_tree(root):
+            if not f.is_file() or f.suffix != ext:
                 continue
-            try:
-                content = f.read_text(errors="ignore")
-                if len(content.splitlines()) < 300:  # skip very large files
-                    files.append({
-                        "path": str(f.relative_to(root)),
-                        "content": content[:3000],
-                    })
-            except Exception:
-                pass
+            lines = read_text_lines(f)
+            if lines is None or len(lines) >= 300:
+                continue
+            files.append({
+                "path": str(f.relative_to(root)),
+                "content": "\n".join(lines)[:3000],
+            })
             if len(files) >= max_files:
                 break
 
