@@ -1,5 +1,5 @@
 """
-main.py — CLI entrypoint for the OpenHands multi-agent team.
+main.py: CLI entrypoint for the Poietes multi-agent team.
 
 Usage:
   python main.py run --task "scan all projects for security issues"
@@ -45,7 +45,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("main")
 
-app = typer.Typer(help="OpenHands Multi-Agent Coding Team")
+app = typer.Typer(help="Poietes multi-agent coding team")
 console = Console()
 
 

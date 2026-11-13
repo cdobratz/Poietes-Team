@@ -2,7 +2,7 @@
 
 ![The Poietes multi-agent team collaborating on code: a pixel art illustration showing four stylized AI agents working together in a digital workspace, conveying teamwork, automation, and development activity in a friendly, approachable tone](images/final-pixel-art.jpg)
 
-A modular, hierarchical AI agent system for autonomous software development, monitoring, security auditing, and content generation — built on OpenHands SDK.
+A modular, hierarchical AI agent system for autonomous software development, monitoring, security auditing, and content generation.
 
 **Deploy autonomous coding workflows with intelligent memory management, extensible skills system, and workspace-scoped directory scanning.**
 
@@ -119,9 +119,7 @@ The list command prints `name`, `description`, and `triggers` for each exported 
 
 ### 3. Memory
 
-Agents store and search through `memory/mem0_client.py`. That client uses Mem0 when an API key or MCP URL is configured. Otherwise it keeps an in-process list that ends when the process exits.
-
-`SmartMemory` in `memory/smart_memory.py` is separate. It scores text from keywords, keeps at most 50 important entries per project id, and `cleanup_low_value()` drops entries with score below 4 that are at least 7 days old. `python main.py memory stats` and `python main.py memory cleanup` each create a new in-process `SmartMemory`. They do not read agent memory.
+Agents started from `main.py` store and recall through `SmartMemory` in `memory/smart_memory.py`. It scores text from keywords, keeps at most 50 important entries per project id, and `cleanup_low_value()` drops entries with score below 4 that are at least 7 days old. The text is also written to the configured client in `memory/mem0_client.py`. That client uses Mem0 when an API key or MCP URL is configured. Otherwise it keeps an in-process list that ends when the process exits. Importance scores stay on the `SmartMemory` object. `python main.py memory stats` and `python main.py memory cleanup` each create a new instance, so they do not show scores from another process.
 
 ```python
 from memory.smart_memory import SmartMemory
@@ -144,7 +142,7 @@ removed = memory.cleanup_low_value()
 
 | Layer       | Technology                          |
 |-------------|-------------------------------------|
-| **Agents**  | OpenHands SDK                       |
+| **Agents**  | In-repo Python agents               |
 | **LLMs**    | Claude / Grok / Ollama / MiniMax    |
 | **Memory**  | Mem0 (semantic + traditional)       |
 | **Code**    | Serena MCP (file operations)        |
